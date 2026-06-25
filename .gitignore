@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+backend/.venv/
+backend/.pydeps/
+backend/.env
+.pytest_cache/
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Local ephemeral Postgres data dir (see backend/scripts/dev_db.sh)
+.localdb/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
