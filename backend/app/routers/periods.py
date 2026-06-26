@@ -1,12 +1,70 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import require_admin
-from app.models import AuditLog, PeriodStatus, User
-from app.schemas import PeriodStatusOut
+from app.deps import get_current_user, require_admin
+from app.models import AuditLog, PeriodStatus, Property, User
+from app.schemas import PeriodStatusOut, PeriodStatusUpsert
 
 router = APIRouter(prefix="/periods", tags=["periods"])
+
+
+def _first_of_month(d: date) -> date:
+    return d.replace(day=1)
+
+
+@router.get("", response_model=list[PeriodStatusOut])
+def list_periods(
+    property_id: str | None = None,
+    month: date | None = None,
+    db: Session = Depends(get_db),
+    _u: User = Depends(get_current_user),
+):
+    """List property-month statuses, optionally filtered by property and/or month."""
+    stmt = select(PeriodStatus)
+    if property_id:
+        stmt = stmt.where(PeriodStatus.property_id == property_id)
+    if month:
+        stmt = stmt.where(PeriodStatus.month == _first_of_month(month))
+    return db.scalars(stmt.order_by(PeriodStatus.month)).all()
+
+
+@router.put("", response_model=PeriodStatusOut)
+def set_period_status(
+    payload: PeriodStatusUpsert,
+    db: Session = Depends(get_db),
+    _u: User = Depends(get_current_user),
+):
+    """Set a property-month's workflow status (draft → posted → locked), upserting the row.
+
+    Reopening a locked month is intentionally *not* allowed here — it must go through the
+    admin-only ``POST /periods/{id}/unlock`` so the change is audited.
+    """
+    month = _first_of_month(payload.month)
+    if db.get(Property, payload.property_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Property not found")
+
+    ps = db.scalar(
+        select(PeriodStatus).where(
+            PeriodStatus.property_id == payload.property_id, PeriodStatus.month == month
+        )
+    )
+    if ps is not None and ps.status == "locked" and payload.status != "locked":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Period is locked; use POST /periods/{id}/unlock (admin only) to reopen.",
+        )
+    if ps is None:
+        ps = PeriodStatus(property_id=payload.property_id, month=month, status=payload.status)
+        db.add(ps)
+    else:
+        ps.status = payload.status
+    db.commit()
+    db.refresh(ps)
+    return ps
 
 
 @router.post("/{period_id}/unlock", response_model=PeriodStatusOut)

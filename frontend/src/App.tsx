@@ -1,74 +1,84 @@
 import { useState } from "react";
-import { getPortfolioMonthly, login, type MonthlyPnL } from "./api";
+import { login } from "./api";
+import { btn, btnPrimary, input } from "./ui";
+import Dashboard from "./views/Dashboard";
+import Entry from "./views/Entry";
+import ImportView from "./views/Import";
+import Manage from "./views/Manage";
+import PropertyDetail from "./views/PropertyDetail";
+import Reclassify from "./views/Reclassify";
 
-// Phase 1 frontend scaffold: log in, then render the portfolio monthly P&L table
-// straight from the computed views. Dashboards/charts/drill-down come in later phases.
+type Tab = "dashboard" | "property" | "entry" | "import" | "manage" | "reclassify";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "property", label: "Property" },
+  { id: "entry", label: "Data Entry" },
+  { id: "import", label: "Import" },
+  { id: "manage", label: "Manage" },
+  { id: "reclassify", label: "Reclassify" },
+];
+
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("dashboard");
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("admin12345");
-  const [rows, setRows] = useState<MonthlyPnL[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     try {
-      const t = await login(email, password);
-      setToken(t);
-      setRows(await getPortfolioMonthly(t));
+      setToken(await login(email, password));
     } catch (err) {
       setError((err as Error).message);
     }
   }
 
-  const fmt = (n: number) =>
-    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", maxWidth: 900, margin: "2rem auto", padding: "0 1rem" }}>
+    <main style={{ fontFamily: "system-ui, sans-serif", maxWidth: 960, margin: "2rem auto", padding: "0 1rem" }}>
       <h1>RE Portfolio Manager</h1>
 
       {!token ? (
         <form onSubmit={handleLogin} style={{ display: "grid", gap: 8, maxWidth: 320 }}>
           <h2>Sign in</h2>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
+          <input style={input} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
           <input
+            style={input}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Password"
           />
-          <button type="submit">Log in</button>
+          <button style={btnPrimary} type="submit">
+            Log in
+          </button>
           {error && <p style={{ color: "crimson" }}>{error}</p>}
         </form>
       ) : (
         <>
-          <h2>Portfolio — Monthly P&amp;L</h2>
-          <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr style={{ textAlign: "right", borderBottom: "2px solid #333" }}>
-                <th style={{ textAlign: "left" }}>Month</th>
-                <th>Gross Rent</th>
-                <th>Operating</th>
-                <th>NOI</th>
-                <th>Below-NOI</th>
-                <th>Cash Flow</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.month} style={{ textAlign: "right", borderBottom: "1px solid #ddd" }}>
-                  <td style={{ textAlign: "left" }}>{r.month}</td>
-                  <td>{fmt(r.gross_rent)}</td>
-                  <td>{fmt(r.operating_expenses)}</td>
-                  <td>{fmt(r.noi)}</td>
-                  <td>{fmt(r.below_noi)}</td>
-                  <td>{fmt(r.cash_flow)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <nav style={{ display: "flex", gap: 8, margin: "1rem 0 1.5rem", borderBottom: "1px solid #ddd", paddingBottom: 8 }}>
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                style={t.id === tab ? btnPrimary : btn}
+                onClick={() => setTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+            <button style={{ ...btn, marginLeft: "auto" }} onClick={() => setToken(null)}>
+              Log out
+            </button>
+          </nav>
+
+          {tab === "dashboard" && <Dashboard token={token} />}
+          {tab === "property" && <PropertyDetail token={token} />}
+          {tab === "entry" && <Entry token={token} />}
+          {tab === "import" && <ImportView token={token} />}
+          {tab === "manage" && <Manage token={token} />}
+          {tab === "reclassify" && <Reclassify token={token} />}
         </>
       )}
     </main>
