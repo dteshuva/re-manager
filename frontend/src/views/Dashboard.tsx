@@ -19,7 +19,7 @@ import {
 import BreakdownTable from "../components/BreakdownTable";
 import PeriodSelector from "../components/PeriodSelector";
 import PnlTrendChart from "../components/PnlTrendChart";
-import { card, fmtCurrency, fmtMonth } from "../ui";
+import { card, CHART, fmtCurrency, fmtMonth } from "../ui";
 
 // Portfolio dashboard: period selector + summary cards + monthly table + trend charts
 // for NOI and cash flow. All figures come straight from the computed P&L views; the
@@ -68,12 +68,11 @@ export default function Dashboard({ token }: { token: string }) {
 
   return (
     <section>
-      <h2>Portfolio — Monthly P&amp;L</h2>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p className="alert-error">{error}</p>}
 
       <PeriodSelector availableMonths={allMonths} onChange={setRange} />
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+      <div className="summary-grid">
         <SummaryCard label="Gross Rent" value={totals.gross_rent} />
         <SummaryCard label="Operating" value={totals.operating_expenses} />
         <SummaryCard label="NOI" value={totals.noi} />
@@ -83,45 +82,47 @@ export default function Dashboard({ token }: { token: string }) {
 
       {breakdown && breakdown.properties.length > 0 && (
         <>
-          <h3>Breakdown by property &amp; unit</h3>
-          <p style={{ color: "#666", marginTop: -8 }}>
+          <h3 className="section-title">Breakdown by property &amp; unit</h3>
+          <p className="hint">
             Totals for the selected period. Click a multifamily property to drill into its
             units; <em>property-tier-only</em> items (shared capex, debt service) are shown
             separately and are not allocated to units.
           </p>
-          <div style={{ marginBottom: 24 }}>
-            <BreakdownTable data={breakdown} />
-          </div>
+          <BreakdownTable data={breakdown} />
         </>
       )}
 
       {chartData.length > 0 && (
         <>
-          <h3>NOI &amp; Cash Flow trend</h3>
+          <h3 className="section-title">NOI &amp; Cash Flow trend</h3>
           <PnlTrendChart data={rows} />
 
-          <h3>Rent vs Operating Expenses</h3>
-          <div style={{ ...card, height: 260 }}>
+          <h3 className="section-title">Rent vs Operating Expenses</h3>
+          <div style={{ ...card, height: 280, padding: "18px 16px 8px" }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                <XAxis dataKey="label" />
-                <YAxis tickFormatter={(v) => money(v)} width={80} />
-                <Tooltip formatter={(v) => money(v as number)} />
-                <Legend />
-                <Bar dataKey="gross_rent" name="Gross Rent" fill="#2563eb" />
-                <Bar dataKey="operating_expenses" name="Operating" fill="#f59e0b" />
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 12, fill: CHART.axis }} tickLine={false} axisLine={{ stroke: CHART.grid }} />
+                <YAxis tickFormatter={(v) => money(v)} width={84} tick={{ fontSize: 12, fill: CHART.axis }} tickLine={false} axisLine={false} />
+                <Tooltip
+                  cursor={{ fill: "rgba(16,24,40,0.04)" }}
+                  formatter={(v) => money(v as number)}
+                  contentStyle={{ borderRadius: 10, border: "1px solid var(--border)", boxShadow: "var(--shadow-md)", fontSize: 13 }}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="gross_rent" name="Gross Rent" fill={CHART.rent} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="operating_expenses" name="Operating" fill={CHART.opex} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </>
       )}
 
-      <h3>Monthly detail</h3>
-      <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
+      <h3 className="section-title">Monthly detail</h3>
+      <table className="data-table">
         <thead>
-          <tr style={{ textAlign: "right", borderBottom: "2px solid #333" }}>
-            <th style={{ textAlign: "left" }}>Month</th>
+          <tr>
+            <th>Month</th>
             <th>Gross Rent</th>
             <th>Operating</th>
             <th>NOI</th>
@@ -131,18 +132,18 @@ export default function Dashboard({ token }: { token: string }) {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.month} style={{ textAlign: "right", borderBottom: "1px solid #ddd" }}>
-              <td style={{ textAlign: "left" }}>{fmtMonth(r.month)}</td>
+            <tr key={r.month}>
+              <td>{fmtMonth(r.month)}</td>
               <td>{fmtCurrency(r.gross_rent)}</td>
               <td>{fmtCurrency(r.operating_expenses)}</td>
               <td>{fmtCurrency(r.noi)}</td>
               <td>{fmtCurrency(r.below_noi)}</td>
-              <td style={{ color: r.cash_flow < 0 ? "crimson" : undefined }}>{fmtCurrency(r.cash_flow)}</td>
+              <td className={r.cash_flow < 0 ? "value-negative" : undefined}>{fmtCurrency(r.cash_flow)}</td>
             </tr>
           ))}
           {rows.length === 0 && !error && (
-            <tr>
-              <td colSpan={6} style={{ color: "#888" }}>
+            <tr className="row-empty">
+              <td colSpan={6}>
                 No data in this period — widen the range or add records under <strong>Data Entry</strong>.
               </td>
             </tr>
@@ -154,18 +155,11 @@ export default function Dashboard({ token }: { token: string }) {
 }
 
 function SummaryCard({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
+  const valueClass = accent ? (value < 0 ? "value-negative" : "value-positive") : undefined;
   return (
-    <div style={{ ...card, minWidth: 140, marginBottom: 0 }}>
-      <div style={{ color: "#666", fontSize: 13 }}>{label}</div>
-      <div
-        style={{
-          fontSize: 22,
-          fontWeight: 600,
-          color: accent && value < 0 ? "crimson" : accent ? "#16a34a" : "#111",
-        }}
-      >
-        {fmtCurrency(value)}
-      </div>
+    <div className={`summary-card${accent ? " is-accent" : ""}`}>
+      <div className="summary-card__label">{label}</div>
+      <div className={`summary-card__value${valueClass ? " " + valueClass : ""}`}>{fmtCurrency(value)}</div>
     </div>
   );
 }

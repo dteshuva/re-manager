@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 720
+    access_token_expire_minutes: int = 43200  # 30 days
 
     seed_admin_email: str = "admin@example.com"
     seed_admin_password: str = "admin12345"

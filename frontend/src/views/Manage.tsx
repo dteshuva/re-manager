@@ -33,9 +33,9 @@ export default function Manage({ token }: { token: string }) {
 
   return (
     <section>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p className="alert-error">{error}</p>}
 
-      <h2>Properties</h2>
+      <h2 className="section-title">Properties</h2>
       <NewPropertyForm onCreate={(b) => wrap(createProperty(token, b))} />
       {properties.map((p) => (
         <PropertyCard
@@ -179,25 +179,25 @@ function CategorySection({ token, onError }: { token: string; onError: (m: strin
   }, [token]);
 
   return (
-    <div style={{ marginTop: 24 }}>
-      <h2>Categories</h2>
-      <p style={{ color: "#666", marginTop: -8 }}>
+    <div style={{ marginTop: 30 }}>
+      <h2 className="section-title">Categories</h2>
+      <p className="hint">
         Global, shared list. The <em>classification</em> is the only thing that drives the math —
         changing it recomputes NOI/cash flow with no migration.
       </p>
-      <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
+      <table className="data-table" style={{ textAlign: "left" }}>
         <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #333" }}>
-            <th>Name</th>
-            <th>Classification</th>
-            <th>Active</th>
+          <tr>
+            <th style={{ textAlign: "left" }}>Name</th>
+            <th style={{ textAlign: "left" }}>Classification</th>
+            <th style={{ textAlign: "left" }}>Active</th>
           </tr>
         </thead>
         <tbody>
           {cats.map((c) => (
-            <tr key={c.id} style={{ borderBottom: "1px solid #eee" }}>
+            <tr key={c.id}>
               <td>{c.name}</td>
-              <td>
+              <td style={{ textAlign: "left" }}>
                 <select
                   style={input}
                   value={c.default_classification}
@@ -214,7 +214,7 @@ function CategorySection({ token, onError }: { token: string; onError: (m: strin
                   ))}
                 </select>
               </td>
-              <td>
+              <td style={{ textAlign: "left" }}>
                 <input
                   type="checkbox"
                   checked={c.active}

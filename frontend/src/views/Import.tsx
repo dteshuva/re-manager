@@ -90,8 +90,6 @@ export default function ImportView({ token }: { token: string }) {
 
   return (
     <section>
-      <h2>Bulk Import</h2>
-
       <div style={card}>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <input type="file" accept=".csv,.txt,.xlsx,.xls" onChange={(e) => onPick(e.target.files?.[0] ?? null)} />
@@ -100,7 +98,7 @@ export default function ImportView({ token }: { token: string }) {
           </button>
         </div>
 
-        <h3 style={{ marginBottom: 4 }}>Column mapping</h3>
+        <h3 className="section-title" style={{ marginBottom: 4 }}>Column mapping</h3>
         <p style={{ color: "#666", marginTop: 0 }}>
           Map each field to a column in your file. {columns.length ? "Detected columns shown below." : "Type the column header names."}
         </p>
@@ -151,7 +149,7 @@ export default function ImportView({ token }: { token: string }) {
             Import
           </button>
         </div>
-        {error && <p style={{ color: "crimson" }}>{error}</p>}
+        {error && <p className="alert-error" style={{ marginTop: 12, marginBottom: 0 }}>{error}</p>}
       </div>
 
       {report && <ReportView report={report} />}
@@ -165,34 +163,34 @@ function ReportView({ report }: { report: ImportReport }) {
   const ok = report.committed;
   return (
     <div style={card}>
-      <h3 style={{ marginTop: 0 }}>
+      <h3 className="section-title" style={{ marginTop: 0 }}>
         {report.dry_run ? "Preview" : ok ? "Imported ✓" : "Not imported"}
       </h3>
-      <p style={{ color: report.dry_run ? "#666" : ok ? "green" : "crimson" }}>
+      <p style={{ color: report.dry_run ? "var(--ink-2)" : ok ? "var(--positive)" : "var(--negative)", fontWeight: 500 }}>
         {report.dry_run
           ? `Would apply ${report.applied_line_items} line item(s) across ${report.records_touched} record(s). Nothing written yet.`
           : ok
             ? `Applied ${report.applied_line_items} line item(s) across ${report.records_touched} record(s).`
             : `Aborted — fix the ${report.invalid_rows} flagged row(s) and re-import.`}
       </p>
-      <p style={{ color: "#666" }}>
+      <p className="muted">
         valid: {report.valid_rows} · invalid: {report.invalid_rows} · mode: {report.on_error}
       </p>
       {report.errors.length > 0 && (
-        <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%", maxWidth: 640 }}>
+        <table className="data-table" style={{ textAlign: "left", maxWidth: 640 }}>
           <thead>
-            <tr style={{ textAlign: "left", borderBottom: "2px solid #333" }}>
-              <th>Row</th>
-              <th>Field</th>
-              <th>Problem</th>
+            <tr>
+              <th style={{ textAlign: "left" }}>Row</th>
+              <th style={{ textAlign: "left" }}>Field</th>
+              <th style={{ textAlign: "left" }}>Problem</th>
             </tr>
           </thead>
           <tbody>
             {report.errors.map((e, i) => (
-              <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
+              <tr key={i}>
                 <td>{e.row ?? "—"}</td>
-                <td>{e.field ?? "—"}</td>
-                <td style={{ color: "crimson" }}>{e.message}</td>
+                <td style={{ textAlign: "left" }}>{e.field ?? "—"}</td>
+                <td style={{ textAlign: "left", color: "var(--negative)" }}>{e.message}</td>
               </tr>
             ))}
           </tbody>
@@ -215,14 +213,14 @@ function MissingView({ token }: { token: string }) {
 
   return (
     <div style={card}>
-      <h3 style={{ marginTop: 0 }}>What's missing</h3>
+      <h3 className="section-title" style={{ marginTop: 0 }}>What's missing</h3>
       <label>
         Month{" "}
         <input style={input} type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
       </label>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p className="alert-error" style={{ marginTop: 12 }}>{error}</p>}
       {missing && missing.length === 0 && (
-        <p style={{ color: "green" }}>All property/unit-months have data for {month}. ✓</p>
+        <p style={{ color: "var(--positive)", fontWeight: 500 }}>All property/unit-months have data for {month}. ✓</p>
       )}
       {missing && missing.length > 0 && (
         <ul>

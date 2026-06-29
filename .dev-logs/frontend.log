@@ -1,0 +1,13 @@
+
+> re-manager-frontend@0.1.0 dev
+> vite
+
+
+  VITE v5.4.21  ready in 414 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+7:08:51 PM [vite] hmr update /src/App.tsx
+7:08:58 PM [vite] hmr update /src/App.tsx
+7:09:02 PM [vite] hmr update /src/App.tsx
+7:09:36 PM [vite] hmr update /src/App.tsx

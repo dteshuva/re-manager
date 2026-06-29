@@ -13,10 +13,10 @@ export default function BreakdownTable({ data }: { data: PortfolioBreakdown }) {
   const toggle = (id: string) => setOpen((o) => ({ ...o, [id]: !o[id] }));
 
   return (
-    <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
+    <table className="data-table">
       <thead>
-        <tr style={{ textAlign: "right", borderBottom: "2px solid #333" }}>
-          <th style={{ textAlign: "left" }}>Scope</th>
+        <tr>
+          <th>Scope</th>
           <th>Gross Rent</th>
           <th>Operating</th>
           <th>NOI</th>
@@ -28,10 +28,10 @@ export default function BreakdownTable({ data }: { data: PortfolioBreakdown }) {
         {data.properties.map((p) => (
           <PropertyRows key={p.property_id} p={p} open={!!open[p.property_id]} onToggle={() => toggle(p.property_id)} />
         ))}
-        <tr style={{ textAlign: "right", borderTop: "2px solid #333", fontWeight: 700 }}>
-          <td style={{ textAlign: "left" }}>Portfolio total</td>
+        <tr className="row-total">
+          <td>Portfolio total</td>
           {cells(data.total).map((v, i) => (
-            <td key={i} style={{ color: i === 4 && v < 0 ? "crimson" : undefined }}>
+            <td key={i} className={i === 4 && v < 0 ? "value-negative" : undefined}>
               {fmtCurrency(v)}
             </td>
           ))}
@@ -43,11 +43,11 @@ export default function BreakdownTable({ data }: { data: PortfolioBreakdown }) {
 
 function PropertyRows({ p, open, onToggle }: { p: PropertyBreakdown; open: boolean; onToggle: () => void }) {
   const multi = p.type === "multifamily";
-  const row = (label: string, m: PnLMetrics, style?: React.CSSProperties, indent = 0) => (
-    <tr style={{ textAlign: "right", ...style }}>
-      <td style={{ textAlign: "left", paddingLeft: 8 + indent }}>{label}</td>
+  const row = (label: string, m: PnLMetrics, rowClass: string) => (
+    <tr className={rowClass}>
+      <td>{label}</td>
       {cells(m).map((v, i) => (
-        <td key={i} style={{ color: i === 4 && v < 0 ? "crimson" : undefined }}>
+        <td key={i} className={i === 4 && v < 0 ? "value-negative" : undefined}>
           {fmtCurrency(v)}
         </td>
       ))}
@@ -58,36 +58,23 @@ function PropertyRows({ p, open, onToggle }: { p: PropertyBreakdown; open: boole
     <Fragment>
       <tr
         onClick={() => multi && onToggle()}
-        style={{
-          textAlign: "right",
-          borderBottom: "1px solid #ddd",
-          cursor: multi ? "pointer" : "default",
-          fontWeight: 600,
-          background: open ? "#f3f6ff" : undefined,
-        }}
+        className={`row-strong${multi ? " is-clickable" : ""}${open ? " row-open" : ""}`}
       >
-        <td style={{ textAlign: "left" }}>
-          {multi && <span style={{ color: "#888" }}>{open ? "▾ " : "▸ "}</span>}
+        <td>
+          {multi && <span className="caret">{open ? "▾" : "▸"}</span>}
           {p.property_name}
-          <span style={{ color: "#888", fontWeight: 400 }}> ({p.type})</span>
+          <span className="muted" style={{ fontWeight: 400 }}> ({p.type})</span>
         </td>
         {cells(p).map((v, i) => (
-          <td key={i} style={{ color: i === 4 && v < 0 ? "crimson" : undefined }}>
+          <td key={i} className={i === 4 && v < 0 ? "value-negative" : undefined}>
             {fmtCurrency(v)}
           </td>
         ))}
       </tr>
       {open && multi && (
         <>
-          {p.units.map((u) =>
-            row(`Unit ${u.unit_number}`, u, { background: "#fafbff", borderBottom: "1px solid #eee" }, 28),
-          )}
-          {row(
-            "Property-tier only (not allocated to units)",
-            p.property_tier,
-            { background: "#fff7ed", fontStyle: "italic", borderBottom: "1px solid #ddd" },
-            28,
-          )}
+          {p.units.map((u) => row(`Unit ${u.unit_number}`, u, "row-sub"))}
+          {row("Property-tier only (not allocated to units)", p.property_tier, "row-tier")}
         </>
       )}
     </Fragment>

@@ -79,8 +79,7 @@ export default function Reclassify({ token }: { token: string }) {
 
   return (
     <section>
-      <h2>Reclassification</h2>
-      <p style={{ color: "#666", marginTop: -8, maxWidth: 720 }}>
+      <p className="hint" style={{ maxWidth: 720, marginTop: 0 }}>
         A category's <strong>classification</strong> is the only thing that drives the math.
         Operating expenses sit <em>above</em> the NOI line; capex, debt service, and other
         below-line items sit <em>below</em> it. Move a category across the line and NOI /
@@ -90,7 +89,7 @@ export default function Reclassify({ token }: { token: string }) {
       <PeriodSelector availableMonths={allMonths} onChange={setRange} />
 
       {totals && (
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+        <div className="summary-grid">
           <Stat label="Operating Expenses" value={totals.operating_expenses} />
           <Stat label="NOI" value={totals.noi} highlight />
           <Stat label="Below-NOI" value={totals.below_noi} />
@@ -99,32 +98,33 @@ export default function Reclassify({ token }: { token: string }) {
       )}
 
       {flash && (
-        <p style={{ ...card, background: "#ecfdf5", borderColor: "#a7f3d0", color: "#065f46" }}>{flash}</p>
+        <p style={{ ...card, background: "var(--positive-soft)", borderColor: "#a7f3d0", color: "#065f46", fontWeight: 500 }}>{flash}</p>
       )}
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p className="alert-error">{error}</p>}
 
-      <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%", maxWidth: 640 }}>
+      <table className="data-table" style={{ textAlign: "left", maxWidth: 640 }}>
         <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #333" }}>
-            <th>Category</th>
-            <th>Classification</th>
-            <th>Line</th>
+          <tr>
+            <th style={{ textAlign: "left" }}>Category</th>
+            <th style={{ textAlign: "left" }}>Classification</th>
+            <th style={{ textAlign: "left" }}>Line</th>
           </tr>
         </thead>
         <tbody>
           {cats.map((c) => {
             const above = c.default_classification === "operating" || c.default_classification === "rent";
+            const isIncome = c.default_classification === "rent";
             return (
-              <tr key={c.id} style={{ borderBottom: "1px solid #eee", opacity: c.active ? 1 : 0.5 }}>
+              <tr key={c.id} style={{ opacity: c.active ? 1 : 0.5 }}>
                 <td>
                   {c.name}
-                  {!c.active && <span style={{ color: "#888" }}> (inactive)</span>}
+                  {!c.active && <span className="muted"> (inactive)</span>}
                 </td>
-                <td>
+                <td style={{ textAlign: "left" }}>
                   <select
+                    className="select"
                     value={c.default_classification}
                     onChange={(e) => reclassify(c, e.target.value as Classification)}
-                    style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid #bbb" }}
                   >
                     {CLASSIFICATIONS.map((x) => (
                       <option key={x} value={x}>
@@ -133,12 +133,10 @@ export default function Reclassify({ token }: { token: string }) {
                     ))}
                   </select>
                 </td>
-                <td style={{ color: above ? "#2563eb" : "#b45309" }}>
-                  {c.default_classification === "rent"
-                    ? "income"
-                    : above
-                      ? "above NOI"
-                      : "below NOI"}
+                <td style={{ textAlign: "left" }}>
+                  <span className="pill" style={{ color: isIncome ? "var(--positive)" : above ? "var(--blue)" : "#b45309" }}>
+                    {isIncome ? "income" : above ? "above NOI" : "below NOI"}
+                  </span>
                 </td>
               </tr>
             );
@@ -151,11 +149,9 @@ export default function Reclassify({ token }: { token: string }) {
 
 function Stat({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
   return (
-    <div style={{ ...card, minWidth: 150, marginBottom: 0, borderColor: highlight ? "#2563eb" : "#ddd" }}>
-      <div style={{ color: "#666", fontSize: 13 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 600, color: value < 0 ? "crimson" : "#111" }}>
-        {fmtCurrency(value)}
-      </div>
+    <div className={`summary-card${highlight ? " is-accent" : ""}`}>
+      <div className="summary-card__label">{label}</div>
+      <div className={`summary-card__value${value < 0 ? " value-negative" : ""}`}>{fmtCurrency(value)}</div>
     </div>
   );
 }

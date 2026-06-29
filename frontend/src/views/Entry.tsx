@@ -15,7 +15,6 @@ import {
   type Property,
   type Unit,
 } from "../api";
-import { btn, btnPrimary, card, input, STATUS_COLOR } from "../ui";
 
 type Row = { category_id: string; amount: string };
 
@@ -138,12 +137,10 @@ export default function Entry({ token }: { token: string }) {
 
   return (
     <section>
-      <h2>Data Entry</h2>
-
-      <div style={{ ...card, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <label>
-          Property{" "}
-          <select style={input} value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
+      <div className="card" style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", padding: "14px 18px", marginBottom: 18 }}>
+        <label className="stack">
+          Property
+          <select className="select" value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
             <option value="">— select —</option>
             {properties.map((p) => (
               <option key={p.id} value={p.id}>
@@ -152,10 +149,10 @@ export default function Entry({ token }: { token: string }) {
             ))}
           </select>
         </label>
-        <label>
-          Scope{" "}
+        <label className="stack">
+          Scope
           <select
-            style={input}
+            className="select"
             value={scope}
             onChange={(e) => setScope(e.target.value)}
             disabled={property?.type !== "multifamily"}
@@ -168,87 +165,91 @@ export default function Entry({ token }: { token: string }) {
             ))}
           </select>
         </label>
-        <label>
-          Month{" "}
-          <input style={input} type="month" value={monthStr} onChange={(e) => setMonthStr(e.target.value)} />
+        <label className="stack">
+          Month
+          <input className="input" type="month" value={monthStr} onChange={(e) => setMonthStr(e.target.value)} />
         </label>
         {period && (
           <span style={{ marginLeft: "auto" }}>
-            Status:{" "}
-            <strong style={{ color: STATUS_COLOR[period.status] }}>{period.status}</strong>
+            <span className={`badge badge-${period.status}`}>{period.status}</span>
           </span>
         )}
       </div>
 
       {!propertyId ? (
-        <p style={{ color: "#888" }}>Select a property to begin.</p>
+        <p className="muted">Select a property to begin.</p>
       ) : (
         <>
           {locked && (
-            <p style={{ color: "#b91c1c" }}>
+            <p className="alert-error" style={{ background: "var(--warn-soft)", borderColor: "#f3d6c5", color: "#9a3412" }}>
               🔒 This month is locked. Edits are disabled — an admin must unlock it.
             </p>
           )}
 
-          <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%", maxWidth: 640 }}>
-            <thead>
-              <tr style={{ textAlign: "left", borderBottom: "2px solid #333" }}>
-                <th style={{ width: "60%" }}>Category</th>
-                <th>Amount</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => (
-                <tr key={i}>
-                  <td>
-                    <select
-                      style={{ ...input, width: "100%" }}
-                      value={row.category_id}
-                      disabled={locked}
-                      onChange={(e) => setRow(i, { category_id: e.target.value })}
-                    >
-                      <option value="">— category —</option>
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} ({c.default_classification})
-                        </option>
-                      ))}
-                      {/* keep an inactive category visible if it's already on this row */}
-                      {row.category_id && !catName[row.category_id] && (
-                        <option value={row.category_id}>(inactive category)</option>
-                      )}
-                    </select>
-                  </td>
-                  <td>
-                    <input
-                      style={{ ...input, width: 120 }}
-                      type="number"
-                      step="0.01"
-                      value={row.amount}
-                      disabled={locked}
-                      onChange={(e) => setRow(i, { amount: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <button style={btn} disabled={locked} onClick={() => removeRow(i)}>
-                      ✕
-                    </button>
-                  </td>
+          <div className="card" style={{ padding: 0, maxWidth: 640, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ width: "58%", textAlign: "left", padding: "11px 14px", fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--ink-3)", background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}>Category</th>
+                  <th style={{ textAlign: "left", padding: "11px 14px", fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--ink-3)", background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}>Amount</th>
+                  <th style={{ background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr key={i}>
+                    <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)" }}>
+                      <select
+                        className="select"
+                        style={{ width: "100%" }}
+                        value={row.category_id}
+                        disabled={locked}
+                        onChange={(e) => setRow(i, { category_id: e.target.value })}
+                      >
+                        <option value="">— category —</option>
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} ({c.default_classification})
+                          </option>
+                        ))}
+                        {/* keep an inactive category visible if it's already on this row */}
+                        {row.category_id && !catName[row.category_id] && (
+                          <option value={row.category_id}>(inactive category)</option>
+                        )}
+                      </select>
+                    </td>
+                    <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)" }}>
+                      <input
+                        className="input"
+                        style={{ width: 120 }}
+                        type="number"
+                        step="0.01"
+                        value={row.amount}
+                        disabled={locked}
+                        onChange={(e) => setRow(i, { amount: e.target.value })}
+                      />
+                    </td>
+                    <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)" }}>
+                      <button className="btn btn-ghost" disabled={locked} onClick={() => removeRow(i)}>
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-          <div style={{ marginTop: 8 }}>
-            <button style={btn} disabled={locked} onClick={addRow}>
+          <div style={{ marginTop: 10 }}>
+            <button className="btn" disabled={locked} onClick={addRow}>
               + Add line
             </button>
           </div>
 
           <div style={{ marginTop: 12 }}>
             <textarea
-              style={{ ...input, width: "100%", maxWidth: 640, minHeight: 50 }}
+              className="input"
+              style={{ width: "100%", maxWidth: 640, minHeight: 54 }}
               placeholder="Notes (optional)"
               value={notes}
               disabled={locked}
@@ -256,13 +257,13 @@ export default function Entry({ token }: { token: string }) {
             />
           </div>
 
-          <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <button style={btnPrimary} disabled={locked} onClick={save}>
+          <div style={{ marginTop: 14, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button className="btn btn-primary" disabled={locked} onClick={save}>
               Save month
             </button>
             {recordId && (
               <button
-                style={btn}
+                className="btn"
                 disabled={locked}
                 onClick={() =>
                   confirm("Delete this record and its line items?") &&
@@ -279,25 +280,25 @@ export default function Entry({ token }: { token: string }) {
                 Delete record
               </button>
             )}
-            <span style={{ borderLeft: "1px solid #ccc", paddingLeft: 8 }}>Workflow:</span>
-            <button style={btn} disabled={locked} onClick={() => changeStatus("draft")}>
+            <span className="muted" style={{ borderLeft: "1px solid var(--border-strong)", paddingLeft: 10 }}>Workflow:</span>
+            <button className="btn" disabled={locked} onClick={() => changeStatus("draft")}>
               Mark draft
             </button>
-            <button style={btn} disabled={locked} onClick={() => changeStatus("posted")}>
+            <button className="btn" disabled={locked} onClick={() => changeStatus("posted")}>
               Post
             </button>
-            <button style={btn} disabled={locked} onClick={() => changeStatus("locked")}>
+            <button className="btn" disabled={locked} onClick={() => changeStatus("locked")}>
               Lock
             </button>
             {locked && (
-              <button style={btn} onClick={unlock}>
+              <button className="btn" onClick={unlock}>
                 Unlock (admin)
               </button>
             )}
           </div>
 
-          {msg && <p style={{ color: "green" }}>{msg}</p>}
-          {error && <p style={{ color: "crimson" }}>{error}</p>}
+          {msg && <p style={{ color: "var(--positive)", fontWeight: 500 }}>{msg}</p>}
+          {error && <p className="alert-error" style={{ marginTop: 12 }}>{error}</p>}
         </>
       )}
     </section>
