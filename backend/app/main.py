@@ -10,6 +10,7 @@ from app.routers import (
     portfolio,
     properties,
     records,
+    settings as settings_router,
     units,
 )
 
@@ -41,6 +42,7 @@ app.include_router(units.router)
 app.include_router(categories.router)
 app.include_router(records.router)
 app.include_router(imports.router)
+app.include_router(settings_router.router)
 
 
 @app.get("/health", tags=["meta"])

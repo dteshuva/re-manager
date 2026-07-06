@@ -8,6 +8,7 @@ from app.db import get_db
 from app.deps import get_current_user, require_admin
 from app.models import AuditLog, PeriodStatus, Property, User
 from app.schemas import PeriodStatusOut, PeriodStatusUpsert
+from app.summaries import refresh_month
 
 router = APIRouter(prefix="/periods", tags=["periods"])
 
@@ -62,6 +63,9 @@ def set_period_status(
         db.add(ps)
     else:
         ps.status = payload.status
+    # Posting/locking a month is the trigger to refresh its pre-aggregated summary.
+    if payload.status in ("posted", "locked"):
+        refresh_month(db, payload.property_id, month)
     db.commit()
     db.refresh(ps)
     return ps
@@ -100,6 +104,8 @@ def unlock_period(
             after=after,
         )
     )
+    # Reopening returns the month to 'posted'; keep its summary current.
+    refresh_month(db, period.property_id, period.month)
     db.commit()
     db.refresh(period)
     return period

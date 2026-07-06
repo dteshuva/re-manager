@@ -17,6 +17,7 @@ from app.db import get_db
 from app.deps import get_current_user
 from app.locks import assert_unlocked
 from app.models import Category, LineItem, MonthlyRecord, Property, Unit, User
+from app.summaries import refresh_month
 from app.schemas import (
     LineItemCreate,
     LineItemOut,
@@ -163,6 +164,8 @@ def upsert_record(
                 amount=item.amount,
             )
         )
+    db.flush()  # write line items so the rollup refresh (below) reads the new values
+    refresh_month(db, payload.property_id, month)
     db.commit()
     db.refresh(rec)
     return _record_out(rec)
@@ -191,7 +194,10 @@ def delete_record(
 ):
     rec = _get_record_or_404(db, record_id)
     assert_unlocked(db, rec.property_id, rec.month)
+    property_id, month = rec.property_id, rec.month
     db.delete(rec)
+    db.flush()  # apply the delete so the rollup refresh reflects the removed record
+    refresh_month(db, property_id, month)
     db.commit()
 
 
@@ -223,6 +229,8 @@ def add_line_item(
         db.add(li)
     li.classification = payload.classification
     li.amount = payload.amount
+    db.flush()
+    refresh_month(db, rec.property_id, rec.month)
     db.commit()
     db.refresh(li)
     return _li_out(li)
@@ -245,6 +253,8 @@ def update_line_item(
         li.classification = data["classification"]
     if "amount" in data:
         li.amount = data["amount"]
+    db.flush()
+    refresh_month(db, rec.property_id, rec.month)
     db.commit()
     db.refresh(li)
     return _li_out(li)
@@ -259,5 +269,8 @@ def delete_line_item(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Line item not found")
     rec = li.monthly_record
     assert_unlocked(db, rec.property_id, rec.month)
+    property_id, month = rec.property_id, rec.month
     db.delete(li)
+    db.flush()
+    refresh_month(db, property_id, month)
     db.commit()

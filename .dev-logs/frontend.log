@@ -3,11 +3,12 @@
 > vite
 
 
-  VITE v5.4.21  ready in 414 ms
+  VITE v5.4.21  ready in 183 ms
 
   ➜  Local:   http://localhost:5173/
   ➜  Network: use --host to expose
-7:08:51 PM [vite] hmr update /src/App.tsx
-7:08:58 PM [vite] hmr update /src/App.tsx
-7:09:02 PM [vite] hmr update /src/App.tsx
-7:09:36 PM [vite] hmr update /src/App.tsx
+5:18:00 PM [vite] hmr update /src/App.tsx, /src/views/Entry.tsx, /src/views/Dashboard.tsx, /src/views/Manage.tsx, /src/views/Reclassify.tsx, /src/views/PropertyDetail.tsx, /src/views/Import.tsx, /src/components/UnitDetail.tsx, /src/components/AttentionSettings.tsx
+5:18:49 PM [vite] hmr update /src/views/Import.tsx
+5:21:55 PM [vite] hmr update /src/views/Import.tsx
+5:22:04 PM [vite] hmr update /src/views/Import.tsx
+1:09:02 PM [vite] hmr update /src/views/Import.tsx

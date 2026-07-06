@@ -19,6 +19,42 @@ class Settings(BaseSettings):
 
     frontend_origin: str = "http://localhost:5173"
 
+    # PDF statement extraction (POST /import/statement/extract). Two free backends:
+    #   * heuristic (pdfplumber) — always available, zero setup, zero cost.
+    #   * a LOCAL LLM via Ollama — used only when reachable, for messy/free-text layouts.
+    # Both run entirely on-machine; there is no paid, per-use API involved.
+    # Set statement_use_ollama=false to force the heuristic even if Ollama is running.
+    statement_use_ollama: bool = True
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.2"
+    # Hard cap so an accidental 500-page upload can't wedge the parser.
+    statement_max_pages: int = 20
+    # Max PDFs accepted in a single batch upload.
+    statement_max_files: int = 20
+
+    # Attention-feed thresholds. The PERCENTAGE is the primary, size-independent trigger;
+    # the absolute-$ floor is an optional materiality gate (0 = pure percentage). These are
+    # only fallbacks — the live values come from the per-account attention_settings row.
+    attention_noi_drop_min_abs: float = 0.0
+    attention_noi_drop_min_pct: float = 15.0
+    attention_expense_spike_min_abs: float = 0.0
+    attention_expense_spike_min_pct: float = 100.0
+    attention_unit_noi_drop_min_abs: float = 0.0
+    attention_unit_noi_drop_min_pct: float = 15.0
+    attention_unit_expense_spike_min_abs: float = 0.0
+    attention_unit_expense_spike_min_pct: float = 100.0
+    # Vacancy: flag when a property's occupancy falls by >= this many percentage points
+    # (size-independent — one unit is 2.5% of a 40-unit property but 0.1% of a 1,000-unit one).
+    attention_vacancy_min_occupancy_drop_pct: float = 2.0
+    # Absolute vacancy: flag any property whose vacancy rate (100 - occupancy%) is >= this,
+    # regardless of month-over-month change — a persistently very-empty property is a standing
+    # problem even in a month where it didn't get worse.
+    attention_vacancy_high_absolute_pct: float = 20.0
+    # Root-cause linking: merge a property-month's NOI drop INTO its expense spike when the
+    # prior-month operating-expense increase accounts for >= this share of the NOI decline
+    # (magnitude reconciliation — near-equality is the evidence they're the same event).
+    attention_noi_expense_reconcile_ratio: float = 0.8
+
 
 @lru_cache
 def get_settings() -> Settings:

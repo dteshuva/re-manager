@@ -17,6 +17,12 @@ NC='\033[0m' # No Color
 # PIDs for cleanup
 declare -a PIDS=()
 
+# Track whether this script started the database, so we only stop what we start.
+DB_STARTED_BY_US=false
+
+# Track whether this script started the frontend, so we leave a pre-existing one running.
+FRONTEND_STARTED_BY_US=false
+
 CLEANED_UP=false
 cleanup() {
   if $CLEANED_UP; then return; fi
@@ -38,10 +44,20 @@ cleanup() {
     kill -9 "$pid" 2>/dev/null || true
   done
 
-  # Stop the database
-  echo -e "${BLUE}Stopping database...${NC}"
-  cd "$ROOT/backend"
-  bash scripts/dev_db.sh stop 2>&1 | grep -v "could not open" || true
+  # A frontend we reused (didn't start) is never in PIDS, so it survives above —
+  # just say so for clarity.
+  if ! $FRONTEND_STARTED_BY_US && port_in_use 5173; then
+    echo -e "${BLUE}Leaving frontend running (was already up)${NC}"
+  fi
+
+  # Stop the database only if we started it; leave a pre-existing one running.
+  if $DB_STARTED_BY_US; then
+    echo -e "${BLUE}Stopping database...${NC}"
+    cd "$ROOT/backend"
+    bash scripts/dev_db.sh stop 2>&1 | grep -v "could not open" || true
+  else
+    echo -e "${BLUE}Leaving database running (was already up)${NC}"
+  fi
 
   echo -e "${GREEN}Shutdown complete${NC}"
   exit 0
@@ -82,15 +98,19 @@ kill_port() {
 
 # Start database
 start_database() {
-  log_info "Starting database..."
-
-  # Stop any existing instance
   cd "$ROOT/backend"
-  bash scripts/dev_db.sh stop 2>&1 | grep -v "could not open" || true
-  sleep 1
+
+  # If a database is already listening on 5433, reuse it as-is.
+  if port_in_use 5433; then
+    log_success "Database already running (port 5433), reusing it"
+    return 0
+  fi
+
+  log_info "Starting database..."
 
   # Start fresh
   if bash scripts/dev_db.sh start > "$LOG_DIR/db.log" 2>&1; then
+    DB_STARTED_BY_US=true
     log_success "Database started (port 5433)"
     sleep 2 # Give DB time to be ready
     return 0
@@ -111,7 +131,7 @@ start_backend() {
   cd "$ROOT/backend"
 
   # Ensure migrations are up to date
-  if ! PYTHONPATH=.pydeps .pydeps/bin/alembic upgrade head > "$LOG_DIR/migrations.log" 2>&1; then
+  if ! PYTHONPATH=.pydeps python3 -m alembic upgrade head > "$LOG_DIR/migrations.log" 2>&1; then
     log_error "Failed to run migrations. See $LOG_DIR/migrations.log"
     cat "$LOG_DIR/migrations.log"
     return 1
@@ -135,7 +155,7 @@ start_backend() {
   fi
 
   # Start the server
-  PYTHONPATH=.pydeps .pydeps/bin/uvicorn app.main:app --port 8000 --reload > "$LOG_DIR/backend.log" 2>&1 &
+  PYTHONPATH=.pydeps python3 -m uvicorn app.main:app --port 8000 --reload > "$LOG_DIR/backend.log" 2>&1 &
   PIDS+=($!)
 
   # Give it a moment to start
@@ -155,8 +175,11 @@ start_backend() {
 start_frontend() {
   log_info "Starting frontend..."
 
-  # Kill any existing process on 5173 (default Vite port)
-  kill_port 5173
+  # If a dev server is already listening on 5173, reuse it as-is — don't kill it.
+  if port_in_use 5173; then
+    log_success "Frontend already running (port 5173), reusing it"
+    return 0
+  fi
 
   cd "$ROOT/frontend"
 
@@ -176,6 +199,7 @@ start_frontend() {
   # Start dev server
   npm run dev > "$LOG_DIR/frontend.log" 2>&1 &
   PIDS+=($!)
+  FRONTEND_STARTED_BY_US=true
 
   # Give it a moment to start
   sleep 3

@@ -15,6 +15,7 @@ import {
   type Property,
   type Unit,
 } from "../api";
+import AttentionSettings from "../components/AttentionSettings";
 import { btn, btnPrimary, card, input } from "../ui";
 
 // Manage properties, their units, and the global category list. The category section
@@ -48,6 +49,9 @@ export default function Manage({ token }: { token: string }) {
       ))}
 
       <CategorySection token={token} onError={setError} />
+
+      <h2 className="section-title">Attention thresholds</h2>
+      <AttentionSettings token={token} />
     </section>
   );
 }

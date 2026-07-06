@@ -284,3 +284,211 @@ class PortfolioBreakdown(BaseModel):
 
     total: PnLMetrics
     properties: list[PropertyBreakdown] = []
+
+
+# ---- Portfolio dashboard (read STRICTLY from portfolio_month_summary) ----
+class OccupancyMetrics(PnLMetrics):
+    """The eight financials plus occupancy, as carried by the property/portfolio rollups."""
+
+    occupancy: float | None = None  # fraction 0..1; NULL if no unit roster
+    occupied_units: int
+    total_units: int
+
+
+class SummaryMetrics(OccupancyMetrics):
+    """A portfolio-month: occupancy metrics + how many properties rolled into it."""
+
+    property_count: int
+
+
+class TrendPoint(BaseModel):
+    """A single point on the T12 sparklines, from ``portfolio_month_summary``."""
+
+    month: date
+    gross_rent: float
+    operating_expenses: float
+    noi: float
+    cash_flow: float
+    occupancy: float | None = None
+
+
+class PortfolioDashboard(BaseModel):
+    """Landing-page payload: the selected period's KPIs (summed) with the immediately
+    preceding equal-length period for the vs-prior deltas, plus a trailing-12 series for the
+    sparklines. From the pre-aggregated summary table, never live line-item aggregation."""
+
+    period_from: date | None
+    period_to: date | None
+    prior_from: date | None
+    prior_to: date | None
+    current: SummaryMetrics | None
+    prior: SummaryMetrics | None
+    trend: list[TrendPoint] = []
+
+
+# ---- Attention feed (ranked exceptions, computed from the rollups) ----
+class AttentionItem(BaseModel):
+    """One ranked exception. ``magnitude`` is the $ used for ranking; ``type`` selects the
+    detector (noi_drop | expense_spike | vacancy | missing_data) and what change/pct mean.
+    ``unit_id`` / ``unit_number`` are set for unit-scoped items in the property feed."""
+
+    type: str
+    property_id: str
+    property_name: str
+    unit_id: str | None = None
+    unit_number: str | None = None
+    category: str | None = None
+    month: date | None = None  # the month the exception occurred in (within the period)
+    magnitude: float
+    current: float | None = None
+    prior: float | None = None
+    change: float | None = None
+    pct_change: float | None = None
+    detail: dict = {}
+    label: str
+
+
+class AttentionFeed(BaseModel):
+    """Exceptions occurring anywhere in [period_from, period_to], each tagged with its month."""
+
+    period_from: date | None
+    period_to: date | None
+    items: list[AttentionItem] = []
+    thresholds: dict = {}
+
+
+# ---- Attention settings (sub-step 6): per-account configurable thresholds ----
+class AttentionSettingsIn(BaseModel):
+    """Editable attention thresholds. The %-floor is the primary, size-independent trigger;
+    the $-floor is an optional materiality gate (0 = pure percentage)."""
+
+    noi_drop_min_abs: float = Field(ge=0)
+    noi_drop_min_pct: float = Field(ge=0)
+    expense_spike_min_abs: float = Field(ge=0)
+    expense_spike_min_pct: float = Field(ge=0)
+    unit_noi_drop_min_abs: float = Field(ge=0)
+    unit_noi_drop_min_pct: float = Field(ge=0)
+    unit_expense_spike_min_abs: float = Field(ge=0)
+    unit_expense_spike_min_pct: float = Field(ge=0)
+    vacancy_min_occupancy_drop_pct: float = Field(ge=0)
+    vacancy_high_absolute_pct: float = Field(ge=0, le=100)
+
+
+class AttentionSettingsOut(AttentionSettingsIn):
+    updated_at: datetime
+
+
+# ---- Property detail (sub-step 4): scoped KPI band + unit roster ----
+class PropertyDashboard(BaseModel):
+    """Property-scoped, period-aware analog of PortfolioDashboard, plus property identity."""
+
+    property_id: str
+    property_name: str
+    type: str
+    period_from: date | None
+    period_to: date | None
+    prior_from: date | None
+    prior_to: date | None
+    current: OccupancyMetrics | None
+    prior: OccupancyMetrics | None
+    trend: list[TrendPoint] = []
+
+
+class UnitRosterRow(PnLMetrics):
+    """One row of the unit roster: this month's metrics + status + NOI change vs prior."""
+
+    unit_id: str
+    unit_number: str
+    label: str | None = None
+    status: str  # "occupied" | "vacant"
+    noi_change: float | None = None  # vs prior month (None if no prior data)
+
+
+class UnitRoster(BaseModel):
+    """Server-paginated/sortable unit roster for a property-month."""
+
+    month: date | None
+    prior_month: date | None
+    total: int  # total units (for pagination)
+    rows: list[UnitRosterRow] = []
+
+
+# ---- Unit detail (sub-step 5): Level 3 ----
+class UnitDetailMonth(PnLMetrics):
+    """One month of a unit's P&L. ``status`` is vacant when the unit had no rent that month.
+    Unit scope excludes property-tier-only items by design (capex/debt at the property tier)."""
+
+    month: date
+    status: str  # "occupied" | "vacant"
+
+
+class UnitDetail(BaseModel):
+    """Level 3: a unit's identity, current status, and its full month-by-month P&L.
+
+    The monthly series is spined on the property's summarized months (so vacant months show
+    as zeros, not gaps). Property-level shared costs are NOT allocated here — unit cash flow
+    is not a pro-rata share of property cash flow."""
+
+    unit_id: str
+    unit_number: str
+    label: str | None = None
+    property_id: str
+    property_name: str
+    status: str
+    months: list[UnitDetailMonth] = []
+
+
+# ---- PDF statement extraction (free, on-machine) ----
+class StatementRow(BaseModel):
+    """One extracted-and-resolved line from a PDF statement. ``category_id`` /
+    ``unknown_category`` are filled by the endpoint after matching against the global
+    category list, so the UI knows which categories it must offer to create first."""
+
+    unit: str | None = None
+    category: str
+    category_id: str | None = None
+    unknown_category: bool = False
+    classification: str | None = Field(default=None, pattern=_CLASS_PATTERN)
+    amount: float
+
+
+class StatementPreview(BaseModel):
+    """Read-only result of parsing an uploaded statement. Nothing is written: the UI shows
+    this for review, offers to create any unknown property/categories, then applies the rows
+    through the existing ``/import/rows`` seam (idempotent, lock-protected, dry-run-able)."""
+
+    backend: str  # "ollama" | "heuristic"
+    detected_property: str | None = None
+    property_id: str | None = None  # matched existing property, if any
+    property_unknown: bool = False
+    detected_month: date | None = None
+    rows: list[StatementRow] = []
+    unknown_categories: list[str] = []
+    warnings: list[str] = []
+
+
+class UnknownCategory(BaseModel):
+    """A category referenced by a statement that doesn't exist yet, with the classification
+    we detected for it — so the UI can offer to create it once (shared across a batch)."""
+
+    name: str
+    suggested_classification: str | None = Field(default=None, pattern=_CLASS_PATTERN)
+
+
+class StatementBatchItem(BaseModel):
+    """One file in a batch: either a parsed preview or a parse error (isolated so one bad
+    PDF never fails the whole batch)."""
+
+    filename: str
+    preview: StatementPreview | None = None
+    error: str | None = None
+
+
+class StatementBatchPreview(BaseModel):
+    """Result of parsing many statements at once. ``unknown_properties`` /
+    ``unknown_categories`` are de-duplicated across every file so the UI resolves each new
+    property/category ONCE for the whole batch rather than per statement."""
+
+    items: list[StatementBatchItem] = []
+    unknown_properties: list[str] = []
+    unknown_categories: list[UnknownCategory] = []

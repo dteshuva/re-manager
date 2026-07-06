@@ -340,6 +340,214 @@ td.num,
 .value-positive { color: var(--positive); }
 .value-negative { color: var(--negative); }
 
+/* ------------------------------------------------- KPI band (dashboard top) */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.kpi-card {
+  display: flex;
+  flex-direction: column;
+  padding: 15px 16px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.kpi-card__label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.kpi-card__value {
+  margin-top: 6px;
+  font-size: 24px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.kpi-card__delta {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.kpi-card__delta.is-good { color: var(--positive); }
+.kpi-card__delta.is-bad  { color: var(--negative); }
+.kpi-card__delta.is-flat { color: var(--ink-3); font-weight: 500; }
+.kpi-card__arrow { font-size: 9px; line-height: 1; }
+.kpi-card__pct {
+  color: var(--ink-3);
+  font-weight: 500;
+  font-size: 11.5px;
+}
+
+.kpi-card__spark {
+  height: 36px;
+  margin-top: 10px;
+}
+
+/* ------------------------------------------------------- attention feed */
+.feed {
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.feed-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.feed-item.is-clickable {
+  cursor: pointer;
+}
+.feed-item.is-clickable:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.feed-chip {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 1px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.feed-chip--noi      { background: var(--negative-soft); color: var(--negative); }
+.feed-chip--spike    { background: var(--accent-soft);   color: var(--accent); }
+.feed-chip--vacancy  { background: #eef2ff;              color: #4338ca; }
+.feed-chip--missing  { background: var(--surface-2);     color: var(--ink-2); }
+
+.feed-item__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.feed-item__title {
+  font-weight: 620;
+  font-size: 14px;
+  color: var(--ink);
+}
+.feed-item__label {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  margin-top: 1px;
+}
+.feed-item__month {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 550;
+  vertical-align: middle;
+}
+
+.feed-item__mag {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+.feed-item__mag strong {
+  font-size: 15px;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+}
+
+.feed-item__chevron {
+  flex: 0 0 auto;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------ status pill (roster) */
+.pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.pill--occupied { background: var(--positive-soft); color: var(--positive); }
+.pill--vacant   { background: var(--negative-soft); color: var(--negative); }
+
+/* ------------------------------------------------ unit detail (Level 3) */
+.unit-detail {
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 16px 18px;
+}
+.unit-detail__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.unit-detail__title {
+  font-size: 16px;
+  font-weight: 650;
+}
+.data-table .row-muted td {
+  color: var(--ink-3);
+}
+
+/* ---------------------------------------------- attention settings grid */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 18px;
+}
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.settings-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.settings-input .input {
+  width: 100%;
+}
+.settings-affix {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
 /* =============================================================== buttons */
 .btn {
   display: inline-flex;

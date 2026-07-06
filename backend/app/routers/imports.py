@@ -17,12 +17,23 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.db import get_db
 from app.deps import get_current_user
 from app.importer import apply_import
-from app.models import MonthlyRecord, Property, Unit, User
+from app.models import Category, MonthlyRecord, Property, Unit, User
 from app.parsing import TEMPLATE_CSV, parse_table
-from app.schemas import ImportReport, ImportRow, MissingScope
+from app.schemas import (
+    ImportReport,
+    ImportRow,
+    MissingScope,
+    StatementBatchItem,
+    StatementBatchPreview,
+    StatementPreview,
+    StatementRow,
+    UnknownCategory,
+)
+from app.statements import extract_statement
 
 router = APIRouter(prefix="/import", tags=["import"])
 
@@ -87,6 +98,146 @@ async def import_file(
 
     # Parser row-errors are merged into the core so they count toward the abort decision.
     return apply_import(db, rows, dry_run=dry_run, on_error=on_error, extra_errors=parse_errors)
+
+
+def _resolve_preview(ex, prop_by_name: dict, cat_by_name: dict) -> StatementPreview:
+    """Turn a raw extraction into a review preview: match the detected property and each
+    category against what exists, flagging the unknowns. Shared by the single + batch
+    endpoints so their resolution behaves identically."""
+    matched_prop = prop_by_name.get((ex.property_name or "").strip().lower())
+    rows: list[StatementRow] = []
+    unknown: dict[str, str] = {}  # lower -> original casing
+    for r in ex.rows:
+        cat = cat_by_name.get(r["category"].strip().lower())
+        if cat is None:
+            unknown.setdefault(r["category"].strip().lower(), r["category"].strip())
+        rows.append(
+            StatementRow(
+                unit=r.get("unit"),
+                category=r["category"].strip(),
+                category_id=cat.id if cat else None,
+                unknown_category=cat is None,
+                classification=r.get("classification"),
+                amount=r["amount"],
+            )
+        )
+    return StatementPreview(
+        backend=ex.backend,
+        detected_property=ex.property_name,
+        property_id=matched_prop.id if matched_prop else None,
+        property_unknown=bool(ex.property_name) and matched_prop is None,
+        detected_month=ex.month,
+        rows=rows,
+        unknown_categories=list(unknown.values()),
+        warnings=ex.warnings,
+    )
+
+
+def _extract_one(content: bytes, props, cats, settings):
+    return extract_statement(
+        content,
+        known_properties=[p.name for p in props],
+        known_categories=[c.name for c in cats],
+        max_pages=settings.statement_max_pages,
+        use_ollama=settings.statement_use_ollama,
+        ollama_url=settings.ollama_url,
+        ollama_model=settings.ollama_model,
+    )
+
+
+@router.post("/statement/extract", response_model=StatementPreview)
+async def extract_statement_pdf(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _u: User = Depends(get_current_user),
+):
+    """Parse a single PDF statement into a review preview. Writes nothing; reads locally
+    (heuristic, or a local Ollama model if one is running — both free) and flags anything
+    that must be created first. The UI applies the reviewed rows via ``POST /import/rows``."""
+    name = (file.filename or "").lower()
+    if not name.endswith(".pdf"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Please upload a .pdf statement.")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="The uploaded file is empty.")
+
+    settings = get_settings()
+    props = db.scalars(select(Property).order_by(Property.name)).all()
+    cats = db.scalars(select(Category)).all()
+    try:
+        ex = _extract_one(content, props, cats, settings)
+    except Exception as exc:  # pdfplumber raises varied errors on malformed PDFs
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Could not read this PDF: {exc}"
+        )
+
+    return _resolve_preview(
+        ex,
+        {p.name.strip().lower(): p for p in props},
+        {c.name.strip().lower(): c for c in cats},
+    )
+
+
+@router.post("/statement/extract-batch", response_model=StatementBatchPreview)
+async def extract_statements_batch(
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    _u: User = Depends(get_current_user),
+):
+    """Parse many PDF statements at once (mixed months/properties). Each file is parsed
+    independently — a bad PDF becomes a per-file error, never a failed batch — and the
+    unknown properties/categories are de-duplicated across the whole batch so the UI can
+    resolve each new item ONCE. Writes nothing."""
+    settings = get_settings()
+    if len(files) > settings.statement_max_files:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many files ({len(files)}). Upload at most {settings.statement_max_files} at once.",
+        )
+
+    props = db.scalars(select(Property).order_by(Property.name)).all()
+    cats = db.scalars(select(Category)).all()
+    prop_by_name = {p.name.strip().lower(): p for p in props}
+    cat_by_name = {c.name.strip().lower(): c for c in cats}
+
+    items: list[StatementBatchItem] = []
+    unknown_props: dict[str, str] = {}  # lower -> name
+    unknown_cats: dict[str, UnknownCategory] = {}  # lower -> {name, suggested_classification}
+
+    for f in files:
+        fname = f.filename or "statement.pdf"
+        if not fname.lower().endswith(".pdf"):
+            items.append(StatementBatchItem(filename=fname, error="Not a PDF file."))
+            continue
+        content = await f.read()
+        if not content:
+            items.append(StatementBatchItem(filename=fname, error="The file is empty."))
+            continue
+        try:
+            ex = _extract_one(content, props, cats, settings)
+            preview = _resolve_preview(ex, prop_by_name, cat_by_name)
+        except Exception as exc:
+            items.append(StatementBatchItem(filename=fname, error=f"Could not read this PDF: {exc}"))
+            continue
+
+        items.append(StatementBatchItem(filename=fname, preview=preview))
+        if preview.property_unknown and preview.detected_property:
+            unknown_props.setdefault(preview.detected_property.strip().lower(), preview.detected_property.strip())
+        for r in preview.rows:
+            if r.unknown_category:
+                key = r.category.strip().lower()
+                existing = unknown_cats.get(key)
+                # Keep the first suggestion, but fill one in if an earlier row had none.
+                if existing is None:
+                    unknown_cats[key] = UnknownCategory(name=r.category.strip(), suggested_classification=r.classification)
+                elif existing.suggested_classification is None and r.classification:
+                    existing.suggested_classification = r.classification
+
+    return StatementBatchPreview(
+        items=items,
+        unknown_properties=list(unknown_props.values()),
+        unknown_categories=list(unknown_cats.values()),
+    )
 
 
 @router.get("/missing", response_model=list[MissingScope])

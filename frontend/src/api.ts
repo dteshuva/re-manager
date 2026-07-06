@@ -161,6 +161,212 @@ export function getPortfolioBreakdown(
   return getJson(token, `/portfolio/breakdown${rangeQuery(range)}`);
 }
 
+// ---- Portfolio dashboard: KPI band + T12 sparklines, read strictly from the
+//      pre-aggregated portfolio_month_summary (instant at scale) ----
+export interface OccupancyMetrics extends PnLMetrics {
+  occupancy: number | null; // fraction 0..1; null if no unit roster
+  occupied_units: number;
+  total_units: number;
+}
+
+export interface SummaryMetrics extends OccupancyMetrics {
+  property_count: number;
+}
+
+export interface TrendPoint {
+  month: string;
+  gross_rent: number;
+  operating_expenses: number;
+  noi: number;
+  cash_flow: number;
+  occupancy: number | null;
+}
+
+export interface PortfolioDashboard {
+  period_from: string | null;
+  period_to: string | null;
+  prior_from: string | null;
+  prior_to: string | null;
+  current: SummaryMetrics | null;
+  prior: SummaryMetrics | null;
+  trend: TrendPoint[];
+}
+
+// Period-aware: no range → latest single month (vs prior month); a range (month / YTD / T12 /
+// custom) sums the period and compares to the preceding equal-length period.
+export function getPortfolioDashboard(
+  token: string,
+  range?: PeriodRange,
+): Promise<PortfolioDashboard> {
+  return getJson(token, `/portfolio/dashboard${rangeQuery(range)}`);
+}
+
+// ---- Attention feed: ranked exceptions, computed from the rollups ----
+export type AttentionType =
+  | "noi_drop"
+  | "expense_spike"
+  | "vacancy"
+  | "high_vacancy"
+  | "missing_data";
+
+export interface AttentionItem {
+  type: AttentionType;
+  property_id: string;
+  property_name: string;
+  unit_id: string | null;
+  unit_number: string | null;
+  category: string | null;
+  month: string | null; // the month the exception occurred in (within the period)
+  magnitude: number;
+  current: number | null;
+  prior: number | null;
+  change: number | null;
+  pct_change: number | null;
+  detail: Record<string, unknown>;
+  label: string;
+}
+
+export interface AttentionFeed {
+  period_from: string | null;
+  period_to: string | null;
+  items: AttentionItem[];
+  thresholds: Record<string, number>;
+}
+
+// Exceptions occurring anywhere in the period (each tagged with its month), not just the
+// last month — so a mid-period anomaly in a YTD/T12 view still surfaces.
+export function getAttentionFeed(token: string, range?: PeriodRange): Promise<AttentionFeed> {
+  return getJson(token, `/portfolio/attention${rangeQuery(range)}`);
+}
+
+// ---- Property detail (sub-step 4): scoped KPI band + unit roster ----
+export interface PropertyDashboard {
+  property_id: string;
+  property_name: string;
+  type: "multifamily" | "single";
+  period_from: string | null;
+  period_to: string | null;
+  prior_from: string | null;
+  prior_to: string | null;
+  current: OccupancyMetrics | null;
+  prior: OccupancyMetrics | null;
+  trend: TrendPoint[];
+}
+
+export interface UnitRosterRow extends PnLMetrics {
+  unit_id: string;
+  unit_number: string;
+  label: string | null;
+  status: "occupied" | "vacant";
+  noi_change: number | null;
+}
+
+export interface UnitRoster {
+  month: string | null;
+  prior_month: string | null;
+  total: number;
+  rows: UnitRosterRow[];
+}
+
+export function getPropertyDashboard(
+  token: string,
+  propertyId: string,
+  range?: PeriodRange,
+): Promise<PropertyDashboard> {
+  return getJson(token, `/properties/${propertyId}/dashboard${rangeQuery(range)}`);
+}
+
+export function getPropertyAttention(
+  token: string,
+  propertyId: string,
+  range?: PeriodRange,
+): Promise<AttentionFeed> {
+  return getJson(token, `/properties/${propertyId}/attention${rangeQuery(range)}`);
+}
+
+export interface RosterQuery {
+  month?: string;
+  sort?: string;
+  order?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+}
+
+export function getUnitRoster(
+  token: string,
+  propertyId: string,
+  q: RosterQuery = {},
+): Promise<UnitRoster> {
+  const p = new URLSearchParams();
+  if (q.month) p.set("month", q.month);
+  if (q.sort) p.set("sort", q.sort);
+  if (q.order) p.set("order", q.order);
+  if (q.limit != null) p.set("limit", String(q.limit));
+  if (q.offset != null) p.set("offset", String(q.offset));
+  const qs = p.toString();
+  return getJson(token, `/properties/${propertyId}/units/roster${qs ? `?${qs}` : ""}`);
+}
+
+// ---- Unit detail (sub-step 5, Level 3) ----
+export interface UnitDetailMonth extends PnLMetrics {
+  month: string;
+  status: "occupied" | "vacant";
+}
+
+export interface UnitDetail {
+  unit_id: string;
+  unit_number: string;
+  label: string | null;
+  property_id: string;
+  property_name: string;
+  status: "occupied" | "vacant";
+  months: UnitDetailMonth[];
+}
+
+export function getUnitDetail(token: string, unitId: string): Promise<UnitDetail> {
+  return getJson(token, `/units/${unitId}/detail`);
+}
+
+// ---- Attention settings (sub-step 6): per-account configurable thresholds ----
+export interface AttentionThresholds {
+  noi_drop_min_abs: number;
+  noi_drop_min_pct: number;
+  expense_spike_min_abs: number;
+  expense_spike_min_pct: number;
+  unit_noi_drop_min_abs: number;
+  unit_noi_drop_min_pct: number;
+  unit_expense_spike_min_abs: number;
+  unit_expense_spike_min_pct: number;
+  vacancy_min_occupancy_drop_pct: number;
+  vacancy_high_absolute_pct: number;
+}
+
+export interface AttentionSettings extends AttentionThresholds {
+  updated_at: string;
+}
+
+export function getAttentionSettings(token: string): Promise<AttentionSettings> {
+  return getJson(token, "/settings/attention");
+}
+
+export function updateAttentionSettings(
+  token: string,
+  body: AttentionThresholds,
+): Promise<AttentionSettings> {
+  return request(token, "PUT", "/settings/attention", body);
+}
+
+export interface Me {
+  id: string;
+  email: string;
+  role: "admin" | "member";
+  is_active: boolean;
+}
+
+export function getMe(token: string): Promise<Me> {
+  return getJson(token, "/auth/me");
+}
+
 // ============================ Phase 3: CRUD + workflow ======================
 
 export interface Property {
@@ -343,4 +549,101 @@ export async function importFile(
 
 export function getMissing(token: string, month: string): Promise<MissingScope[]> {
   return getJson(token, `/import/missing?month=${month}`);
+}
+
+// ---- Structured rows import (the seam every parser targets) ----
+export interface ImportRowInput {
+  property?: string;
+  property_id?: string;
+  unit?: string | null;
+  unit_id?: string;
+  month: string; // YYYY-MM-01
+  category?: string;
+  category_id?: string;
+  classification?: Classification | null;
+  amount: number;
+  source_row?: number;
+}
+
+export function importRows(
+  token: string,
+  rows: ImportRowInput[],
+  opts: { dryRun: boolean; onError: "abort" | "skip" },
+): Promise<ImportReport> {
+  const q = new URLSearchParams({
+    dry_run: String(opts.dryRun),
+    on_error: opts.onError,
+  });
+  return request<ImportReport>(token, "POST", `/import/rows?${q}`, rows);
+}
+
+// ---- PDF statement extraction (free, on-machine) ----
+export interface StatementRow {
+  unit: string | null;
+  category: string;
+  category_id: string | null;
+  unknown_category: boolean;
+  classification: Classification | null;
+  amount: number;
+}
+
+export interface StatementPreview {
+  backend: string; // "ollama" | "heuristic"
+  detected_property: string | null;
+  property_id: string | null;
+  property_unknown: boolean;
+  detected_month: string | null; // YYYY-MM-01
+  rows: StatementRow[];
+  unknown_categories: string[];
+  warnings: string[];
+}
+
+export async function extractStatement(token: string, file: File): Promise<StatementPreview> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_URL}/import/statement/extract`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.detail ? String(data.detail) : `Extraction failed (${res.status})`);
+  }
+  return data as StatementPreview;
+}
+
+export interface UnknownCategory {
+  name: string;
+  suggested_classification: Classification | null;
+}
+
+export interface StatementBatchItem {
+  filename: string;
+  preview: StatementPreview | null;
+  error: string | null;
+}
+
+export interface StatementBatchPreview {
+  items: StatementBatchItem[];
+  unknown_properties: string[];
+  unknown_categories: UnknownCategory[];
+}
+
+export async function extractStatementsBatch(
+  token: string,
+  files: File[],
+): Promise<StatementBatchPreview> {
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  const res = await fetch(`${API_URL}/import/statement/extract-batch`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.detail ? String(data.detail) : `Extraction failed (${res.status})`);
+  }
+  return data as StatementBatchPreview;
 }

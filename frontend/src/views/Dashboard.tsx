@@ -10,13 +10,19 @@ import {
   YAxis,
 } from "recharts";
 import {
+  getAttentionFeed,
   getPortfolioBreakdown,
+  getPortfolioDashboard,
   getPortfolioMonthly,
+  type AttentionFeed as AttentionFeedType,
   type MonthlyPnL,
   type PeriodRange,
   type PortfolioBreakdown,
+  type PortfolioDashboard,
 } from "../api";
+import AttentionFeed from "../components/AttentionFeed";
 import BreakdownTable from "../components/BreakdownTable";
+import KpiBand from "../components/KpiBand";
 import PeriodSelector from "../components/PeriodSelector";
 import PnlTrendChart from "../components/PnlTrendChart";
 import { card, CHART, fmtCurrency, fmtMonth } from "../ui";
@@ -29,6 +35,8 @@ export default function Dashboard({ token }: { token: string }) {
   const [rows, setRows] = useState<MonthlyPnL[]>([]);
   const [breakdown, setBreakdown] = useState<PortfolioBreakdown | null>(null);
   const [range, setRange] = useState<PeriodRange>({});
+  const [dashboard, setDashboard] = useState<PortfolioDashboard | null>(null);
+  const [feed, setFeed] = useState<AttentionFeedType | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // One initial load (no range) to discover which months have data.
@@ -38,8 +46,11 @@ export default function Dashboard({ token }: { token: string }) {
       .catch((e) => setError(e.message));
   }, [token]);
 
-  // Reload whenever the selected range changes.
+  // One period selector drives everything: KPI band + sparklines (period vs prior period),
+  // the attention feed (anchored at the period's last month), and the detail sections below.
   useEffect(() => {
+    getPortfolioDashboard(token, range).then(setDashboard).catch((e) => setError(e.message));
+    getAttentionFeed(token, range).then(setFeed).catch((e) => setError(e.message));
     getPortfolioMonthly(token, range).then(setRows).catch((e) => setError(e.message));
     getPortfolioBreakdown(token, range).then(setBreakdown).catch((e) => setError(e.message));
   }, [token, range.from, range.to]);
@@ -49,36 +60,34 @@ export default function Dashboard({ token }: { token: string }) {
     [rows],
   );
 
-  const totals = useMemo(
-    () =>
-      rows.reduce(
-        (a, r) => ({
-          gross_rent: a.gross_rent + r.gross_rent,
-          operating_expenses: a.operating_expenses + r.operating_expenses,
-          noi: a.noi + r.noi,
-          below_noi: a.below_noi + r.below_noi,
-          cash_flow: a.cash_flow + r.cash_flow,
-        }),
-        { gross_rent: 0, operating_expenses: 0, noi: 0, below_noi: 0, cash_flow: 0 },
-      ),
-    [rows],
-  );
-
   const money = (v: number | string) => fmtCurrency(Number(v));
 
   return (
     <section>
       {error && <p className="alert-error">{error}</p>}
 
-      <PeriodSelector availableMonths={allMonths} onChange={setRange} />
-
-      <div className="summary-grid">
-        <SummaryCard label="Gross Rent" value={totals.gross_rent} />
-        <SummaryCard label="Operating" value={totals.operating_expenses} />
-        <SummaryCard label="NOI" value={totals.noi} />
-        <SummaryCard label="Below-NOI" value={totals.below_noi} />
-        <SummaryCard label="Cash Flow" value={totals.cash_flow} accent />
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+        <h3 className="section-title" style={{ margin: 0 }}>
+          Portfolio · {periodLabel(dashboard)}
+          {dashboard?.prior_from && (
+            <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>
+              {" "}vs {periodLabel({ period_from: dashboard.prior_from, period_to: dashboard.prior_to })}
+            </span>
+          )}
+        </h3>
+        <PeriodSelector availableMonths={allMonths} onChange={setRange} defaultMode="month" />
       </div>
+
+      {dashboard && <KpiBand data={dashboard} />}
+
+      <h3 className="section-title">Needs attention</h3>
+      <p className="hint">
+        Exceptions occurring anywhere in {feed ? periodLabel(feed) : "the selected period"}, ranked by
+        dollar impact — biggest first. Each is tagged with its month and links to the property causing it.
+      </p>
+      {feed && <AttentionFeed feed={feed} />}
+
+      <h3 className="section-title">Detail</h3>
 
       {breakdown && breakdown.properties.length > 0 && (
         <>
@@ -154,12 +163,10 @@ export default function Dashboard({ token }: { token: string }) {
   );
 }
 
-function SummaryCard({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
-  const valueClass = accent ? (value < 0 ? "value-negative" : "value-positive") : undefined;
-  return (
-    <div className={`summary-card${accent ? " is-accent" : ""}`}>
-      <div className="summary-card__label">{label}</div>
-      <div className={`summary-card__value${valueClass ? " " + valueClass : ""}`}>{fmtCurrency(value)}</div>
-    </div>
-  );
+// "Dec 2025" for a single month, "Jan 2025 – Dec 2025" for a span.
+function periodLabel(d: { period_from: string | null; period_to: string | null } | null): string {
+  if (!d?.period_from || !d?.period_to) return "—";
+  return d.period_from === d.period_to
+    ? fmtMonth(d.period_to)
+    : `${fmtMonth(d.period_from)} – ${fmtMonth(d.period_to)}`;
 }

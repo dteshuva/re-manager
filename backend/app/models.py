@@ -190,6 +190,111 @@ class PeriodStatus(Base):
     __table_args__ = (UniqueConstraint("property_id", "month", name="period_status_property_month_key"),)
 
 
+class PropertyMonthSummary(Base):
+    """Pre-aggregated property-month rollup (INSIGHT_DASHBOARD_SPEC sub-step 1).
+
+    DERIVED from ``v_monthly_pnl`` and written only by the SQL refresh functions
+    (``refresh_property_month_summary`` / ``rebuild_all_summaries``), never by the
+    ORM. Raw line items stay the source of truth; this table makes dashboards fast
+    and reconciles exactly with the live P&L queries. Aggregates unit rows AND the
+    property-tier row, but ``occupied_units`` / ``total_units`` are unit-scoped."""
+
+    __tablename__ = "property_month_summary"
+
+    property_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("properties.id", ondelete="CASCADE"), primary_key=True
+    )
+    month: Mapped[date] = mapped_column(Date, primary_key=True)
+    gross_rent: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    operating_expenses: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    noi: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    capex: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    debt_service: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    other_below_line: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    below_noi: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    cash_flow: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    occupied_units: Mapped[int] = mapped_column(nullable=False)
+    total_units: Mapped[int] = mapped_column(nullable=False)
+    occupancy: Mapped[Decimal | None] = mapped_column(Numeric(6, 5))
+    refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class UnitMonthSummary(Base):
+    """Pre-aggregated unit-month rollup (INSIGHT_DASHBOARD_SPEC sub-step 4).
+
+    Powers the property's unit roster (server-sortable/paginated) and the property-scoped
+    unit attention feed (which units dropped / went vacant) without scanning raw line items.
+    DERIVED from ``v_monthly_pnl`` (unit rows only); a unit with no record in a month simply
+    has no row here (= vacant). Carries ``property_id`` so a property's units query is a single
+    indexed read. Written only by the SQL refresh functions."""
+
+    __tablename__ = "unit_month_summary"
+
+    unit_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("units.id", ondelete="CASCADE"), primary_key=True
+    )
+    month: Mapped[date] = mapped_column(Date, primary_key=True)
+    property_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False
+    )
+    gross_rent: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    operating_expenses: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    noi: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    capex: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    debt_service: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    other_below_line: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    below_noi: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    cash_flow: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PortfolioMonthSummary(Base):
+    """Pre-aggregated portfolio-month rollup, summed from the property rows above
+    (so it can never disagree with the property tier). See PropertyMonthSummary."""
+
+    __tablename__ = "portfolio_month_summary"
+
+    month: Mapped[date] = mapped_column(Date, primary_key=True)
+    gross_rent: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    operating_expenses: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    noi: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    capex: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    debt_service: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    other_below_line: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    below_noi: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    cash_flow: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    occupied_units: Mapped[int] = mapped_column(nullable=False)
+    total_units: Mapped[int] = mapped_column(nullable=False)
+    occupancy: Mapped[Decimal | None] = mapped_column(Numeric(6, 5))
+    property_count: Mapped[int] = mapped_column(nullable=False)
+    refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AttentionSettings(Base):
+    """Single-row (per-account) attention-feed thresholds (sub-step 6). ``id`` is pinned to 1
+    by a CHECK constraint so there is exactly one row for the whole deployment."""
+
+    __tablename__ = "attention_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, server_default=text("1"))
+    noi_drop_min_abs: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    noi_drop_min_pct: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
+    expense_spike_min_abs: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    expense_spike_min_pct: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
+    unit_noi_drop_min_abs: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    unit_noi_drop_min_pct: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
+    unit_expense_spike_min_abs: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    unit_expense_spike_min_pct: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
+    # Size-independent vacancy trigger: flag when occupancy falls by >= this many pp.
+    vacancy_min_occupancy_drop_pct: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
+    # Absolute vacancy trigger: flag any property whose vacancy rate is >= this %, regardless
+    # of month-over-month change (a persistently very-empty property is a standing problem).
+    vacancy_high_absolute_pct: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 
