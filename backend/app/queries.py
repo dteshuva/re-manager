@@ -227,11 +227,17 @@ def _dashboard_payload(db, table, where, params, date_from, date_to):
         date_from = date_to
 
     length = _months_inclusive(date_from, date_to)
-    prior_to = _shift_month(date_from, -1)
-    prior_from = _shift_month(date_from, -length)
+    # A very early `date_from` can push the equal-length prior period below year 1, which
+    # `date()` rejects. That just means there's no prior period to compare against — skip it
+    # rather than 500 the whole dashboard.
+    try:
+        prior_to = _shift_month(date_from, -1)
+        prior_from = _shift_month(date_from, -length)
+        prior = _period_metrics(db, table, prior_from, prior_to, where, params)
+    except (ValueError, OverflowError):
+        prior_from = prior_to = prior = None
 
     current = _period_metrics(db, table, date_from, date_to, where, params)
-    prior = _period_metrics(db, table, prior_from, prior_to, where, params)
     trend = db.execute(
         text(
             "SELECT month, gross_rent, operating_expenses, noi, cash_flow, occupancy "

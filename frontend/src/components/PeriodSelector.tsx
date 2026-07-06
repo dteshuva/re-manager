@@ -59,10 +59,35 @@ export default function PeriodSelector({
     }
   }, [mode, asOf, from, to, earliest, latest]);
 
+  // A <input type="month"> reports every keystroke, so mid-typing a year yields partial
+  // values like "0002-06" before "2024-06". Emitting those fires requests for nonsense
+  // periods (and the backend 500s computing a prior period for year 2). Only propagate once
+  // both bounds carry a full 4-digit year.
+  const yearOk = (iso?: string) => !iso || Number(iso.slice(0, 4)) >= 1000;
   useEffect(() => {
-    onChange(range);
+    if (yearOk(range.from) && yearOk(range.to)) onChange(range);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range.from, range.to]);
+
+  // Step the as-of month by ±1, clamped to the available data range (ym strings sort lexically).
+  const stepAsOf = (delta: number) => {
+    const next = addMonths(asOf, delta);
+    if (next < earliest || next > latest) return;
+    setAsOf(next);
+  };
+  const atStart = asOf <= earliest;
+  const atEnd = asOf >= latest;
+
+  // Shift the whole custom range window by ±1 month, keeping its width, clamped to the data range.
+  const stepRange = (delta: number) => {
+    const nextFrom = addMonths(from, delta);
+    const nextTo = addMonths(to, delta);
+    if (nextFrom < earliest || nextTo > latest) return;
+    setFrom(nextFrom);
+    setTo(nextTo);
+  };
+  const rangeAtStart = from <= earliest;
+  const rangeAtEnd = to >= latest;
 
   const modeBtn = (m: Mode, label: string) => (
     <button
@@ -86,16 +111,58 @@ export default function PeriodSelector({
 
       {mode === "range" && (
         <span className="row" style={{ gap: 6 }}>
+          <button
+            className="btn btn-ghost"
+            style={{ padding: "8px 10px" }}
+            onClick={() => stepRange(-1)}
+            disabled={rangeAtStart}
+            aria-label="Shift range back one month"
+            title="Shift range back one month"
+          >
+            ‹
+          </button>
           <input className="input" type="month" value={from} onChange={(e) => setFrom(e.target.value)} />
           <span className="muted">→</span>
           <input className="input" type="month" value={to} onChange={(e) => setTo(e.target.value)} />
+          <button
+            className="btn btn-ghost"
+            style={{ padding: "8px 10px" }}
+            onClick={() => stepRange(1)}
+            disabled={rangeAtEnd}
+            aria-label="Shift range forward one month"
+            title="Shift range forward one month"
+          >
+            ›
+          </button>
         </span>
       )}
 
       {(mode === "month" || mode === "ytd" || mode === "t12") && (
         <label className="row" style={{ gap: 6 }}>
           {mode === "month" ? "month" : "as of"}
-          <input className="input" type="month" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
+          <span className="row" style={{ gap: 4 }}>
+            <button
+              className="btn btn-ghost"
+              style={{ padding: "8px 10px" }}
+              onClick={() => stepAsOf(-1)}
+              disabled={atStart}
+              aria-label="Previous month"
+              title="Previous month"
+            >
+              ‹
+            </button>
+            <input className="input" type="month" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
+            <button
+              className="btn btn-ghost"
+              style={{ padding: "8px 10px" }}
+              onClick={() => stepAsOf(1)}
+              disabled={atEnd}
+              aria-label="Next month"
+              title="Next month"
+            >
+              ›
+            </button>
+          </span>
         </label>
       )}
     </div>

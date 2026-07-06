@@ -42,17 +42,26 @@ export default function Dashboard({ token }: { token: string }) {
   // One initial load (no range) to discover which months have data.
   useEffect(() => {
     getPortfolioMonthly(token)
-      .then((r) => setAllMonths(r.map((x) => x.month)))
+      .then((r) => {
+        setAllMonths(r.map((x) => x.month));
+        setError(null);
+      })
       .catch((e) => setError(e.message));
   }, [token]);
 
   // One period selector drives everything: KPI band + sparklines (period vs prior period),
   // the attention feed (anchored at the period's last month), and the detail sections below.
+  // A fresh load clears any stale error: the four requests run in parallel, so a single
+  // transient network blip must not leave the banner stuck once the reload succeeds.
   useEffect(() => {
-    getPortfolioDashboard(token, range).then(setDashboard).catch((e) => setError(e.message));
-    getAttentionFeed(token, range).then(setFeed).catch((e) => setError(e.message));
-    getPortfolioMonthly(token, range).then(setRows).catch((e) => setError(e.message));
-    getPortfolioBreakdown(token, range).then(setBreakdown).catch((e) => setError(e.message));
+    Promise.all([
+      getPortfolioDashboard(token, range).then(setDashboard),
+      getAttentionFeed(token, range).then(setFeed),
+      getPortfolioMonthly(token, range).then(setRows),
+      getPortfolioBreakdown(token, range).then(setBreakdown),
+    ])
+      .then(() => setError(null))
+      .catch((e) => setError(e.message));
   }, [token, range.from, range.to]);
 
   const chartData = useMemo(

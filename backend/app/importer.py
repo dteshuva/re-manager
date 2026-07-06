@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Category, LineItem, MonthlyRecord, Property, Unit
 from app.schemas import ImportIssue, ImportReport, ImportRow
+from app.summaries import refresh_month
 
 
 class _Resolver:
@@ -164,6 +165,9 @@ def apply_import(
     proceed = not (errors and on_error == "abort")
     applied_items = 0
     records_touched: set = set()
+    # Distinct (property, month) scopes whose summary rollups must be recomputed so the
+    # dashboard (which reads STRICTLY from the summary tables) reflects the imported data.
+    summary_scopes: set[tuple] = set()
 
     if proceed and resolved:
         # Cache existing monthly_records for the touched scopes so we get-or-create once.
@@ -187,6 +191,7 @@ def apply_import(
                     db.flush()
                 rec_cache[rkey] = rec
             records_touched.add(rec.id if rec.id else rkey)
+            summary_scopes.add((rr.property_id, rr.month))
 
             li = db.scalar(
                 select(LineItem).where(
@@ -205,6 +210,11 @@ def apply_import(
     if dry_run or not proceed:
         db.rollback()
     elif resolved:
+        # Recompute the summary rollups for every touched property-month in the same
+        # transaction, so v_monthly_pnl (which now sees the flushed line items) and the
+        # summary tables commit together and can never drift apart.
+        for property_id, month in summary_scopes:
+            refresh_month(db, property_id, month)
         db.commit()
         committed = True
     else:
