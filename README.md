@@ -4,20 +4,32 @@ Hosted web app to track **actual** monthly financial performance across a real e
 portfolio — rent, expenses, NOI, and cash flow at three levels: **unit → property →
 portfolio**. See [PROJECT_SPEC.md](PROJECT_SPEC.md) for the full brief.
 
-> **Status: all 7 build phases complete** — scaffold + schema + migrations + auth + computed
-> P&L views + seed + aggregation endpoints + manual CRUD/entry forms with the
-> draft→posted→locked workflow + CSV/Excel bulk import + portfolio dashboard + property
-> detail with unit drill-down + unit detail + reclassification control. A frontend
-> design/polish pass is planned next. Out of scope for v1: underwriting/proforma — the
-> schema leaves room, nothing is built.
+> **Status: core build complete + insight dashboard, investment insights, and PDF
+> statement import shipped.** The original 7 phases (scaffold + schema + migrations + auth +
+> computed P&L views + seed + aggregation endpoints + manual CRUD/entry with the
+> draft→posted→locked workflow + CSV/Excel bulk import + portfolio dashboard + property/unit
+> drill-down + reclassification) are all in place, and three feature areas have since been
+> added on top:
+>
+> - **Insight dashboard** — a pre-aggregated summary layer feeding an attention-first
+>   dashboard: a ranked "needs attention" feed (NOI drops, expense spikes, vacancies,
+>   missing data) with per-account, configurable thresholds.
+> - **Investment insights** — per-property acquisition inputs → cap rate, cash-on-cash,
+>   DSCR, and value-weighted portfolio aggregates, computed on read.
+> - **PDF statement import** — a free, fully-local statement extractor (pdfplumber + an
+>   optional local Ollama LLM) that emits rows into the same idempotent import core.
+>
+> A frontend design/polish pass is still planned. Out of scope for v1: underwriting/proforma —
+> the schema leaves room, nothing is built.
 
 ## Stack
 
-| Layer    | Choice                                                              |
-| -------- | ------------------------------------------------------------------ |
-| Database | Postgres (Supabase-compatible)                                     |
-| Backend  | FastAPI + SQLAlchemy 2.0 + Alembic + psycopg2; JWT (PyJWT) + bcrypt |
-| Frontend | React + Vite + TypeScript + Recharts (trend charts)               |
+| Layer    | Choice                                                                            |
+| -------- | --------------------------------------------------------------------------------- |
+| Database | Postgres (Supabase-compatible)                                                    |
+| Backend  | FastAPI + SQLAlchemy 2.0 + Alembic + psycopg2; JWT (PyJWT) + bcrypt                |
+| Frontend | React + Vite + TypeScript + Recharts (trend charts)                                |
+| Extras   | pdfplumber for PDF statements; optional local Ollama LLM (no paid API, ever)       |
 
 ---
 
@@ -32,8 +44,11 @@ portfolio**. See [PROJECT_SPEC.md](PROJECT_SPEC.md) for the full brief.
    operating expenses, NOI, below-NOI total, and cash flow for any scope/month range.
    **NOI and cash flow are computed in SQL, never stored**, and are summed **by
    classification**, so new categories and reclassifications are picked up with zero code change.
-5. **Seed** — 3 properties (one multifamily with 3 units, two single-asset), 9 global
-   categories, 3 months of line items, and a locked month to demo admin unlock.
+5. **Seed** — a realistic portfolio: **15 multifamily properties (40–100 units each) + 2
+   single-asset**, over **24 months (Jan 2024 – Dec 2025)**, with **planted anomalies**
+   (an NOI cliff on Oak Ridge, an expense spike, and a vacancy on Maple Court in June 2025)
+   so the attention feed and trend charts have something real to surface, plus a locked month
+   to demo admin unlock.
 
 ---
 
@@ -43,6 +58,18 @@ portfolio**. See [PROJECT_SPEC.md](PROJECT_SPEC.md) for the full brief.
 - Python 3.10+
 - Node 18+ (for the frontend dev server)
 - A Postgres database — either a **Supabase** project or a local Postgres.
+
+### One command (recommended)
+
+Once dependencies are installed (below), `./dev.sh` brings up the whole stack with
+auto-recovery: it starts a throwaway local Postgres if none is running, applies migrations,
+seeds an empty database, then launches the backend (`:8000`) and frontend (`:5173`). It
+leaves a database or frontend you already had running untouched, and logs to `.dev-logs/`.
+
+Backend deps are vendored into `backend/.pydeps` (no venv required) and every backend
+command runs with `PYTHONPATH=.pydeps` — that's why the verify scripts below are invoked that
+way. To populate it once: `pip install -t backend/.pydeps -r backend/requirements.txt`. The
+classic venv flow below works too.
 
 ### 1. Backend
 
@@ -88,7 +115,8 @@ monthly P&L table rendered straight from the computed views.
 
 ## Schema overview
 
-Eight tables and three views. Two Postgres enums:
+The core is **eight tables and three views**; the insight/investment work adds five
+**derived summary + inputs** tables (migrations `0002`–`0008`). Two Postgres enums:
 `classification` = `rent | operating | capex | debt_service | other_below_line`;
 `period_status_enum` = `draft | posted | locked`.
 
@@ -105,6 +133,21 @@ Eight tables and three views. Two Postgres enums:
 
 Views: `v_line_item_resolved` (effective classification per line) → `v_monthly_pnl`
 (P&L per property/unit/month) → `v_portfolio_monthly` (portfolio rollup).
+
+**Derived / inputs tables** (added for the insight dashboard + investment insights):
+
+| Table                            | Purpose                                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------- |
+| `property_month_summary`         | Pre-aggregated per-property-month P&L, **derived** from `v_monthly_pnl` (line items remain source of truth). |
+| `unit_month_summary`             | Same rollup at the unit grain — powers unit-level attention detectors.                       |
+| `portfolio_month_summary`        | Portfolio-month rollup for the dashboard KPI band / sparklines.                             |
+| `attention_settings`             | Per-account, configurable attention thresholds ($ and % floors, occupancy).                |
+| `property_investment`            | Acquisition inputs per property: `purchase_price`, `closing_costs`, `loan_amount`, `purchase_date`. |
+
+The summaries are refreshed idempotently when a property-month is posted or locked
+([`app/summaries.py`](backend/app/summaries.py) wrapping the migration-defined SQL), so the
+attention feed and investment metrics read fast pre-aggregated rollups, never raw line items
+at request time.
 
 ### Key design decisions
 
@@ -149,9 +192,15 @@ Views: `v_line_item_resolved` (effective classification per line) → `v_monthly
 | POST   | `/auth/users`                              | admin | Provision a user                             |
 | POST   | `/periods/{id}/unlock`                     | admin | Unlock locked month → `posted`; audits       |
 | GET    | `/portfolio/monthly?from&to`               | user  | Portfolio P&L by month                       |
+| GET    | `/portfolio/dashboard?from&to`             | user  | Landing-page KPI band + T12 sparklines       |
+| GET    | `/portfolio/attention?from&to&limit`       | user  | Ranked "needs attention" feed (see below)    |
 | GET    | `/portfolio/breakdown?from&to`             | user  | Period totals: portfolio → property → unit   |
 | GET    | `/properties/{id}/monthly?from&to`         | user  | Property P&L by month; honest rollup split   |
+| GET    | `/properties/{id}/dashboard?from&to`       | user  | Property KPI band + sparklines               |
+| GET    | `/properties/{id}/attention?from&to`       | user  | Property-scoped attention feed               |
+| GET    | `/properties/{id}/units/roster`            | user  | Unit roster (occupancy) for a property       |
 | GET    | `/properties/{id}/units/monthly?from&to`   | user  | Per-unit monthly breakdown for a property    |
+| GET    | `/units/{id}/detail`                       | user  | Single-unit detail (roster + latest figures) |
 | GET    | `/units/{id}/monthly?from&to`              | user  | Single-unit P&L by month                     |
 
 `from`/`to` are inclusive month bounds (`YYYY-MM-01`); both optional.
@@ -182,11 +231,12 @@ Writes to a **locked** property-month are rejected with `423 Locked`; only an ad
 reopen it via `/periods/{id}/unlock`, which writes to `audit_log`. Verify the whole flow
 with `PYTHONPATH=.pydeps python3 verify_phase3.py`.
 
-The frontend has six tabs: **Dashboard** (portfolio P&L + trend charts + breakdown),
-**Property** (property detail with a Total / By-unit toggle), **Data Entry** (per
-property/unit/month line-item form + workflow buttons), **Import** (bulk upload), **Manage**
-(properties, units, categories), and **Reclassify** (reclassification control with live NOI
-recompute).
+The frontend has seven tabs: **Dashboard** (attention feed + portfolio P&L + trend charts +
+breakdown), **Property** (property detail with a Total / By-unit toggle), **Investments**
+(cap rate / cash-on-cash / DSCR per property + portfolio), **Data Entry** (per
+property/unit/month line-item form + workflow buttons), **Import** (CSV/Excel bulk upload +
+PDF statement extraction), **Manage** (properties, units, categories), and **Reclassify**
+(reclassification control with live NOI recompute).
 
 ### Portfolio dashboard (Phase 5)
 
@@ -231,17 +281,101 @@ It's driven by `GET /properties/{id}/monthly` (the `units` / `property_tier` spl
   Replacement" from capex to operating moves $8,000 above the NOI line and NOI drops by
   exactly that.)
 
-This completes the 7-phase build order. Frontend styling is intentionally lightweight
-(inline styles); a dedicated design/polish pass is the planned next step.
+This completes the original 7-phase build order. The sections below cover the feature areas
+added since. Frontend styling is intentionally lightweight; a dedicated design/polish pass is
+the planned next step.
+
+### Insight dashboard — summary layer + attention feed (Phase 8–9)
+
+At scale, a portfolio dashboard's job is **surfacing exceptions**, not listing everything.
+Two pieces make that fast and honest:
+
+- **Pre-aggregated summary layer.** `property_month_summary` / `unit_month_summary` /
+  `portfolio_month_summary` are **derived** from `v_monthly_pnl` and refreshed idempotently on
+  post/lock. Every dashboard KPI, sparkline, and attention detector reads these rollups —
+  never raw line items at request time — so it stays fast across thousands of units. Line
+  items remain the single source of truth; a refresh just recomputes the same row.
+
+- **Ranked attention feed** ([`app/attention.py`](backend/app/attention.py), served at
+  `GET /portfolio/attention` and `GET /properties/{id}/attention`). Four detectors, all
+  computable from the rollups:
+  - **noi_drop** — property (or unit) NOI fell vs the prior month past both a `$` and a `%` floor;
+  - **expense_spike** — one operating category materially above its own trailing-3-month average;
+  - **vacancy** — a property's occupied-unit count dropped vs the prior month (lost rent);
+  - **missing_data** — a property that had a prior-month rollup but none for the selected month.
+
+  Each item carries a `magnitude` (`$`) and the feed is ranked biggest-first. Root-cause
+  linking ties a property NOI drop to the category/unit that drove it.
+
+**Configurable thresholds (Phase 9).** The `$`/`%` floors and occupancy thresholds are
+**per-account** in `attention_settings`, editable in the UI (the **Attention settings**
+panel) via `GET/PUT /attention`. The dashboard's period selector is fully flexible
+(All / YTD / T12 / custom range) and the feed re-anchors to the period's last month.
+
+Verify with `PYTHONPATH=.pydeps python3 verify_phase8.py` (unit detail) and
+`verify_phase9.py` (period-flexible dashboards + thresholds; restores defaults, safe to re-run).
+
+### Investment insights (Phase 10)
+
+The **Investments** tab turns per-property acquisition inputs into return metrics.
+
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| GET    | `/investments`                                | Every property with inputs + value-weighted portfolio aggregates |
+| GET    | `/properties/{id}/investment/metrics`         | One property's inputs + computed metrics (nulls until inputs exist) |
+| PUT    | `/properties/{id}/investment`                 | Create/replace acquisition inputs |
+| DELETE | `/properties/{id}/investment`                 | Clear inputs (metrics become unavailable) |
+
+- **Inputs** (`property_investment`): `purchase_price`, `closing_costs`, `loan_amount`
+  (`0` ⇒ all-cash), `purchase_date`. `equity_invested = price − loan + closing`.
+- **Metrics are computed on read** in [`app/queries.py`](backend/app/queries.py) from those
+  inputs + the `property_month_summary` rollup, so they always reflect the current P&L:
+  **cap rate** (T12 NOI ÷ purchase price), **cash-on-cash** (T12 cash flow ÷ equity),
+  **DSCR** (T12 NOI ÷ debt service), and **average cash-on-cash**.
+- **Honest gating.** A metric is `null` unless it can be computed honestly: cash-on-cash
+  needs ≥ 12 months of data (never annualize a lumpy stub), average cash-on-cash needs ≥ 24,
+  DSCR needs recorded debt service. Cap rate is `annualized` (flagged) when the window has
+  < 12 months. All time math keys off **months with data**, not `purchase_date`.
+- **Portfolio aggregates** are value-weighted component sums (Σ NOI ÷ Σ price, Σ cash flow ÷
+  Σ equity), each scoped to only the properties eligible for that metric, with a
+  `*_property_count` reporting how many rolled in — never a mean of percentages.
+
+Verify with `PYTHONPATH=.pydeps python3 verify_phase10.py` (reconciles every metric against
+raw summary sums, checks the gates and the gap-safe trailing-12 window; only touches its own
+row, safe to re-run).
+
+### PDF statement import (free, fully local)
+
+A third producer for the import seam ([`app/statements.py`](backend/app/statements.py)):
+property managers each send statements in their own layout, so the extractor is
+**format-agnostic**, not template-driven. It emits the same `ImportRow` shape the CSV/Excel
+parser does into the same import core — storage and computation never change.
+
+- **Two local backends, no per-use cost.** `heuristic` (`pdfplumber` pulls text + tables,
+  then rules find the reporting month, property, and `(category, amount)` lines — always
+  available, zero setup) and an **optional** `ollama` backend (a local LLM for messy/free-text
+  layouts, used only when a local Ollama server is reachable). **No paid LLM API is ever
+  called;** when Ollama isn't running it silently falls back to the heuristic.
+- **Review before write.** `POST /import/statement/extract` (one file) and
+  `/extract-batch` (many, unknown properties/categories de-duplicated across the batch)
+  return a **read-only preview**: detected property/month, parsed rows, and any unknown
+  categories with a suggested classification. Nothing is written — the UI shows the preview,
+  offers to create unknown property/categories once, then applies the rows through the
+  existing idempotent, lock-protected, dry-run-able `/import/rows` seam.
+
+Config lives in [`app/config.py`](backend/app/config.py): `statement_use_ollama`,
+`ollama_url`, `ollama_model`, plus `statement_max_pages` / `statement_max_files` guards.
 
 ### Bulk import (Phase 4)
 
 | Method | Path | Notes |
 | ------ | ---- | ----- |
-| GET  | `/import/template`            | Download a ready-to-edit CSV template |
-| POST | `/import/file`               | Upload CSV/Excel + a column **mapping** (multipart) |
-| POST | `/import/rows`               | Apply **structured rows** as JSON (the automation seam) |
-| GET  | `/import/missing?month=`     | "What's missing": property/unit-months with no data |
+| GET  | `/import/template`                | Download a ready-to-edit CSV template |
+| POST | `/import/file`                    | Upload CSV/Excel + a column **mapping** (multipart) |
+| POST | `/import/rows`                    | Apply **structured rows** as JSON (the automation seam) |
+| POST | `/import/statement/extract`       | Extract one PDF statement → preview rows (see below) |
+| POST | `/import/statement/extract-batch` | Extract many PDFs at once; unknowns de-duped across files |
+| GET  | `/import/missing?month=`          | "What's missing": property/unit-months with no data |
 
 `/import/file` and `/import/rows` share one **import core** (`app/importer.py`); the
 CSV/Excel parser (`app/parsing.py`) is just one producer of rows. A future
@@ -281,16 +415,19 @@ CRUD + entry forms arrive in Phase 3.
 
 ---
 
-## Sample result — portfolio monthly NOI (from seed data)
+## Sample result — portfolio monthly NOI (illustrative)
+
+The shape of `v_portfolio_monthly`, and the one behaviour the model exists to make honest:
 
 ```
   month  | gross_rent | operating_expenses |   noi   | below_noi | cash_flow
 ---------+------------+--------------------+---------+-----------+-----------
- 2026-01 |   12100.00 |            4620.00 | 7480.00 |   8200.00 |   -720.00
- 2026-02 |   12175.00 |            4620.00 | 7555.00 |  16200.00 |  -8645.00
- 2026-03 |   12250.00 |            4620.00 | 7630.00 |   8200.00 |   -570.00
+ month 1 |   12100.00 |            4620.00 | 7480.00 |   8200.00 |   -720.00
+ month 2 |   12175.00 |            4620.00 | 7555.00 |  16200.00 |  -8645.00
+ month 3 |   12250.00 |            4620.00 | 7630.00 |   8200.00 |   -570.00
 ```
 
-NOI grows steadily with rent; **February's cash flow dips because an $8,000 roof
+NOI grows steadily with rent; **month 2's cash flow dips because an $8,000 roof
 replacement (capex) lands *below* the NOI line — NOI itself is unaffected**, exactly per
-the financial model.
+the financial model. The seeded portfolio (Jan 2024 – Dec 2025) plants exactly these kinds
+of events so the dashboard's attention feed has real anomalies to rank.
