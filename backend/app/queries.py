@@ -403,8 +403,9 @@ def portfolio_breakdown(
     (each with its unit list and the honest unit-vs-property-tier split).
 
     Two grouped queries (properties, units) over ``v_monthly_pnl``, assembled into a tree.
-    LEFT JOINs keep properties/units with no data in the period (as zeros). All figures
-    stay computed from current classifications.
+    LEFT JOINs keep units with no data in the period (as zeros), but properties with no
+    entries in the period are dropped from the breakdown. All figures stay computed from
+    current classifications.
     """
     params = {"date_from": date_from, "date_to": date_to}
 
@@ -419,6 +420,7 @@ def portfolio_breakdown(
         LEFT JOIN v_monthly_pnl v
                ON v.property_id = p.id AND {_range("v.month")}
         GROUP BY p.id, p.name, p.type
+        HAVING COUNT(v.month) > 0
         ORDER BY p.name
     """
     prop_rows = _rows(db.execute(text(prop_sql), params))
@@ -459,3 +461,217 @@ def portfolio_breakdown(
         )
 
     return {"total": total, "properties": properties}
+
+
+# ---- Investment insights (acquisition inputs + return metrics from the rollup) -------------
+#
+# All metrics are derived on read from the acquisition inputs plus ``property_month_summary``
+# (noi, cash_flow, debt_service per property-month; cash_flow is already levered/net of debt
+# service). Nothing is stored, so reclassifications and new months flow through automatically.
+#
+# Design rules (see the feature memo):
+#   * equity_invested = purchase_price - loan_amount + closing_costs  (cash actually in).
+#   * Time math keys off months WITH data, never purchase_date (data may start years after the
+#     purchase). purchase_date only clamps the window to months at/after acquisition.
+#   * Cap rate annualizes NOI from whatever window exists (NOI is smooth) — flagged when < 12mo.
+#   * Cash-on-cash is gated to a full trailing year: cash flow is lumpy (capex), so annualizing
+#     a stub produces garbage. Average cash-on-cash needs >= 24 months to average >1 year.
+
+
+def _load_investment_months(db: Session, property_id: str, purchase_date: date) -> list[dict]:
+    """Summarized months at/after the purchase month, ascending (noi, cash_flow, debt_service)."""
+    first = purchase_date.replace(day=1)
+    rows = db.execute(
+        text(
+            "SELECT month, noi, cash_flow, debt_service FROM property_month_summary "
+            "WHERE property_id = :id AND month >= :first ORDER BY month"
+        ),
+        {"id": property_id, "first": first},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def _cap_noi(t12_noi: float | None, t12_months: int, annualized: bool) -> float | None:
+    """NOI used as the cap-rate numerator: the raw trailing-12 sum for a property with a full
+    year of history, or annualized-from-what-exists for one younger than a year."""
+    if t12_noi is None:
+        return None
+    if annualized and t12_months:
+        return t12_noi / t12_months * 12
+    return t12_noi
+
+
+def _investment_figures(inv: dict, months: list[dict]) -> dict:
+    """Derive equity + the four return metrics from inputs (``inv``) and the month series.
+
+    ``months`` is ascending and already clamped to >= the purchase month. The trailing-12
+    window is the 12 *calendar* months ending at the latest data month (NOT the last 12 rows) —
+    an internal gap (a missing month) contributes 0 rather than pulling an older month into the
+    window. ``annualized`` is True only when the data doesn't yet *span* a full year (a genuinely
+    young hold), which is the only case where we annualize; a full-year property with one missing
+    month is summed as-is. Metrics that can't be computed honestly come back as None."""
+    price = float(inv["purchase_price"])
+    closing = float(inv["closing_costs"])
+    loan = float(inv["loan_amount"])
+    equity = price - loan + closing
+    out = {
+        "purchase_price": price,
+        "closing_costs": closing,
+        "loan_amount": loan,
+        "purchase_date": inv["purchase_date"],
+        "equity_invested": equity,
+        "months_available": len(months),
+        "t12_months": 0,
+        "t12_noi": None,
+        "t12_cash_flow": None,
+        "t12_debt_service": None,
+        "annualized": False,
+        "cap_rate": None,
+        "cash_on_cash": None,
+        "dscr": None,
+        "avg_cash_on_cash": None,
+    }
+    if not months:
+        return out
+
+    earliest, latest = months[0]["month"], months[-1]["month"]
+    window_start = _shift_month(latest, -11)  # first month of the trailing-12 calendar window
+    window = [m for m in months if m["month"] >= window_start]
+    n = len(window)  # present months within the 12-month window (< 12 ⇒ gap or young)
+    full_year = earliest <= window_start  # data reaches back a full trailing year
+    t12_noi = sum(float(m["noi"]) for m in window)
+    t12_cf = sum(float(m["cash_flow"]) for m in window)
+    t12_debt = sum(float(m["debt_service"]) for m in window)
+    out.update(
+        t12_months=n,
+        t12_noi=t12_noi,
+        t12_cash_flow=t12_cf,
+        t12_debt_service=t12_debt,
+        annualized=not full_year,
+    )
+
+    # Cap rate: raw T12 sum for a full year of history; annualized only for a young hold.
+    cap_noi = _cap_noi(t12_noi, n, not full_year)
+    if price > 0 and cap_noi is not None:
+        out["cap_rate"] = cap_noi / price
+    # Cash-on-cash: only with a full trailing year of history (never annualize lumpy cash flow).
+    if full_year and equity > 0:
+        out["cash_on_cash"] = t12_cf / equity
+    # DSCR: does NOI cover debt service? A ratio, so a gap/short window doesn't distort it.
+    if t12_debt > 0:
+        out["dscr"] = t12_noi / t12_debt
+    # Average cash-on-cash: needs the data to SPAN >= 24 months so it averages > 1 year. Years
+    # elapsed keys off the span (not the row count), so a gap doesn't inflate the average.
+    span = _months_inclusive(earliest, latest)
+    if span >= 24 and equity > 0:
+        cum_cf = sum(float(m["cash_flow"]) for m in months)
+        out["avg_cash_on_cash"] = cum_cf / equity / (span / 12)
+    return out
+
+
+def investment_metrics(db: Session, property_id: str) -> dict | None:
+    """One property's acquisition inputs + computed return metrics.
+
+    Returns None if the property does not exist. If the property exists but has no investment
+    row yet, returns the identity with all inputs/metrics None (so the UI can prompt for input).
+    """
+    prop = db.execute(
+        text("SELECT id::text AS id, name, type FROM properties WHERE id = :id"),
+        {"id": property_id},
+    ).mappings().first()
+    if prop is None:
+        return None
+
+    base = {
+        "property_id": prop["id"],
+        "property_name": prop["name"],
+        "type": prop["type"],
+        "purchase_price": None,
+        "closing_costs": None,
+        "loan_amount": None,
+        "purchase_date": None,
+        "equity_invested": None,
+        "months_available": 0,
+        "t12_months": 0,
+        "t12_noi": None,
+        "t12_cash_flow": None,
+        "t12_debt_service": None,
+        "annualized": False,
+        "cap_rate": None,
+        "cash_on_cash": None,
+        "dscr": None,
+        "avg_cash_on_cash": None,
+    }
+    inv = db.execute(
+        text(
+            "SELECT purchase_price, closing_costs, loan_amount, purchase_date "
+            "FROM property_investment WHERE property_id = :id"
+        ),
+        {"id": property_id},
+    ).mappings().first()
+    if inv is None:
+        return base
+
+    months = _load_investment_months(db, property_id, inv["purchase_date"])
+    base.update(_investment_figures(inv, months))
+    return base
+
+
+def portfolio_investment(db: Session) -> dict:
+    """Every property with investment inputs + value-weighted portfolio aggregates.
+
+    Aggregates are component sums (Σ annualized-NOI / Σ price, Σ T12 cash flow / Σ equity,
+    Σ T12 NOI / Σ T12 debt), i.e. the natural value-weighted average — never a mean of
+    per-property rates. Each aggregate is scoped to only the properties eligible for that
+    metric (cash-on-cash: >= 12 months; DSCR: debt recorded), reported via ``*_property_count``.
+    """
+    rows = db.execute(
+        text(
+            "SELECT p.id::text AS id, p.name, p.type, i.purchase_price, i.closing_costs, "
+            "       i.loan_amount, i.purchase_date "
+            "FROM property_investment i JOIN properties p ON p.id = i.property_id "
+            "ORDER BY p.name"
+        )
+    ).mappings().all()
+
+    props: list[dict] = []
+    sum_noi_annual = sum_price = 0.0
+    sum_cf = sum_equity = 0.0
+    sum_t12_noi = sum_debt = 0.0
+    cap_n = coc_n = dscr_n = 0
+    total_price = total_equity = 0.0
+
+    for r in rows:
+        months = _load_investment_months(db, r["id"], r["purchase_date"])
+        fig = _investment_figures(r, months)
+        props.append(
+            {"property_id": r["id"], "property_name": r["name"], "type": r["type"], **fig}
+        )
+        total_price += fig["purchase_price"]
+        total_equity += fig["equity_invested"]
+        cap_noi = _cap_noi(fig["t12_noi"], fig["t12_months"], fig["annualized"])
+        if cap_noi is not None and fig["purchase_price"] > 0:
+            sum_noi_annual += cap_noi
+            sum_price += fig["purchase_price"]
+            cap_n += 1
+        # Cash-on-cash aggregate counts only properties with a full year of history.
+        if not fig["annualized"] and fig["t12_months"] > 0 and fig["equity_invested"] > 0:
+            sum_cf += fig["t12_cash_flow"]
+            sum_equity += fig["equity_invested"]
+            coc_n += 1
+        if fig["t12_debt_service"] and fig["t12_debt_service"] > 0:
+            sum_t12_noi += fig["t12_noi"]
+            sum_debt += fig["t12_debt_service"]
+            dscr_n += 1
+
+    return {
+        "properties": props,
+        "cap_rate": (sum_noi_annual / sum_price) if sum_price > 0 else None,
+        "cash_on_cash": (sum_cf / sum_equity) if sum_equity > 0 else None,
+        "dscr": (sum_t12_noi / sum_debt) if sum_debt > 0 else None,
+        "total_purchase_price": total_price,
+        "total_equity_invested": total_equity,
+        "cap_rate_property_count": cap_n,
+        "cash_on_cash_property_count": coc_n,
+        "dscr_property_count": dscr_n,
+    }

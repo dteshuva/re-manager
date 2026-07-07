@@ -18,3 +18,14 @@
 1:25:56 PM [vite] hmr update /src/components/PeriodSelector.tsx
 2:07:10 PM [vite] hmr update /src/views/Dashboard.tsx
 2:15:08 PM [vite] hmr update /src/components/PeriodSelector.tsx
+3:28:31 PM [vite] hmr update /src/views/Dashboard.tsx, /src/views/Manage.tsx, /src/views/Reclassify.tsx, /src/views/PropertyDetail.tsx, /src/views/Import.tsx, /src/components/BreakdownTable.tsx, /src/components/PnlTrendChart.tsx, /src/components/AttentionFeed.tsx, /src/components/UnitDetail.tsx, /src/components/AttentionSettings.tsx, /src/components/KpiBand.tsx
+3:28:48 PM [vite] hmr update /src/App.tsx, /src/views/Entry.tsx, /src/views/Dashboard.tsx, /src/views/Manage.tsx, /src/views/Reclassify.tsx, /src/views/PropertyDetail.tsx, /src/views/Import.tsx, /src/components/UnitDetail.tsx, /src/components/AttentionSettings.tsx
+3:31:05 PM [vite] hmr update /src/views/PropertyDetail.tsx
+3:31:12 PM [vite] hmr update /src/views/PropertyDetail.tsx
+3:31:47 PM [vite] hmr update /src/App.tsx
+3:31:54 PM [vite] hmr update /src/App.tsx
+4:32:45 PM [vite] hmr update /src/components/InvestmentPanel.tsx
+4:33:06 PM [vite] hmr update /src/components/InvestmentPanel.tsx
+4:37:03 PM [vite] hmr update /src/components/InvestmentPanel.tsx
+4:37:13 PM [vite] hmr update /src/components/InvestmentPanel.tsx
+4:37:25 PM [vite] hmr update /src/components/InvestmentPanel.tsx

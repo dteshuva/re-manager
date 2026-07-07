@@ -1,880 +1,690 @@
 INFO:     Will watch for changes in these directories: ['/home/daniel/re-manager/backend']
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [150837] using WatchFiles
-INFO:     Started server process [150840]
+INFO:     Started reloader process [172716] using WatchFiles
+INFO:     Started server process [172719]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     127.0.0.1:45824 - "GET /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45826 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45798 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45824 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45824 - "GET /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45808 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45824 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45808 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45798 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45826 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45794 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45826 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45822 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45824 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45822 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45808 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45794 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45798 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45808 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45826 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45826 - "GET /portfolio/dashboard?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45798 - "GET /portfolio/monthly?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45808 - "GET /portfolio/attention?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45794 - "GET /portfolio/breakdown?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45794 - "GET /portfolio/dashboard?from=0002-01-01&to=2026-06-01 HTTP/1.1" 500 Internal Server Error
-ERROR:    Exception in ASGI application
-Traceback (most recent call last):
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/protocols/http/httptools_impl.py", line 401, in run_asgi
-    result = await app(  # type: ignore[func-returns-value]
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/middleware/proxy_headers.py", line 70, in __call__
-    return await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/applications.py", line 1054, in __call__
-    await super().__call__(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/applications.py", line 113, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 187, in __call__
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 165, in __call__
-    await self.app(scope, receive, _send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 93, in __call__
-    await self.simple_response(scope, receive, send, request_headers=headers)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 144, in simple_response
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/exceptions.py", line 62, in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 715, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 735, in app
-    await route.handle(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 288, in handle
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 76, in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 73, in app
-    response = await f(request)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 301, in app
-    raw_response = await run_endpoint_function(
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 214, in run_endpoint_function
-    return await run_in_threadpool(dependant.call, **values)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/concurrency.py", line 39, in run_in_threadpool
-    return await anyio.to_thread.run_sync(func, *args)
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/to_thread.py", line 63, in run_sync
-    return await get_async_backend().run_sync_in_worker_thread(
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 2596, in run_sync_in_worker_thread
-    return await future
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 1029, in run
-    result = context.run(func, *args)
-  File "/home/daniel/re-manager/backend/app/routers/portfolio.py", line 58, in portfolio_dashboard
-    return queries.portfolio_dashboard(db, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 216, in portfolio_dashboard
-    return _dashboard_payload(db, "portfolio_month_summary", "TRUE", {}, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 231, in _dashboard_payload
-    prior_from = _shift_month(date_from, -length)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 159, in _shift_month
-    return date(total // 12, total % 12 + 1, 1)
-ValueError: year -2023 is out of range
-INFO:     127.0.0.1:45798 - "GET /portfolio/monthly?from=0002-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45798 - "GET /portfolio/dashboard?from=0202-01-01&to=2026-06-01 HTTP/1.1" 500 Internal Server Error
-ERROR:    Exception in ASGI application
-Traceback (most recent call last):
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/protocols/http/httptools_impl.py", line 401, in run_asgi
-    result = await app(  # type: ignore[func-returns-value]
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/middleware/proxy_headers.py", line 70, in __call__
-    return await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/applications.py", line 1054, in __call__
-    await super().__call__(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/applications.py", line 113, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 187, in __call__
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 165, in __call__
-    await self.app(scope, receive, _send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 93, in __call__
-    await self.simple_response(scope, receive, send, request_headers=headers)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 144, in simple_response
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/exceptions.py", line 62, in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 715, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 735, in app
-    await route.handle(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 288, in handle
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 76, in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 73, in app
-    response = await f(request)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 301, in app
-    raw_response = await run_endpoint_function(
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 214, in run_endpoint_function
-    return await run_in_threadpool(dependant.call, **values)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/concurrency.py", line 39, in run_in_threadpool
-    return await anyio.to_thread.run_sync(func, *args)
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/to_thread.py", line 63, in run_sync
-    return await get_async_backend().run_sync_in_worker_thread(
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 2596, in run_sync_in_worker_thread
-    return await future
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 1029, in run
-    result = context.run(func, *args)
-  File "/home/daniel/re-manager/backend/app/routers/portfolio.py", line 58, in portfolio_dashboard
-    return queries.portfolio_dashboard(db, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 216, in portfolio_dashboard
-    return _dashboard_payload(db, "portfolio_month_summary", "TRUE", {}, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 231, in _dashboard_payload
-    prior_from = _shift_month(date_from, -length)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 159, in _shift_month
-    return date(total // 12, total % 12 + 1, 1)
-ValueError: year -1623 is out of range
-INFO:     127.0.0.1:45808 - "GET /portfolio/attention?from=0002-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45826 - "GET /portfolio/breakdown?from=0002-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45808 - "GET /portfolio/attention?from=0202-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48222 - "GET /portfolio/monthly?from=0202-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45808 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45826 - "GET /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48244 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48222 - "GET /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48238 - "GET /portfolio/breakdown?from=0202-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48238 - "GET /portfolio/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48222 - "GET /portfolio/dashboard?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48244 - "GET /portfolio/breakdown?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45826 - "GET /portfolio/attention?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57212 - "OPTIONS /portfolio/dashboard?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57192 - "OPTIONS /portfolio/attention?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57220 - "OPTIONS /portfolio/monthly?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57200 - "OPTIONS /portfolio/breakdown?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57200 - "GET /portfolio/dashboard?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57192 - "GET /portfolio/monthly?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57220 - "GET /portfolio/attention?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57212 - "GET /portfolio/breakdown?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57192 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57200 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57212 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57220 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57200 - "GET /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57220 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57192 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57212 - "GET /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57212 - "OPTIONS /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57192 - "OPTIONS /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57192 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57212 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57212 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57192 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57220 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57200 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57212 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57192 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57220 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57200 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57200 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57220 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57192 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57200 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57192 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57220 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57220 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57192 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57200 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57192 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57200 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57220 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57226 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57226 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57226 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53684 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53690 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53694 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53684 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53694 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53704 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53690 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53684 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53694 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53690 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57226 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53690 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53674 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57226 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53690 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36130 - "GET /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36128 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36154 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36142 - "GET /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36142 - "GET /portfolio/dashboard?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36154 - "GET /portfolio/attention?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36128 - "GET /portfolio/monthly?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36130 - "GET /portfolio/breakdown?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36130 - "GET /portfolio/dashboard?from=0002-01-01&to=2026-06-01 HTTP/1.1" 500 Internal Server Error
-ERROR:    Exception in ASGI application
-Traceback (most recent call last):
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/protocols/http/httptools_impl.py", line 401, in run_asgi
-    result = await app(  # type: ignore[func-returns-value]
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/middleware/proxy_headers.py", line 70, in __call__
-    return await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/applications.py", line 1054, in __call__
-    await super().__call__(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/applications.py", line 113, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 187, in __call__
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 165, in __call__
-    await self.app(scope, receive, _send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 93, in __call__
-    await self.simple_response(scope, receive, send, request_headers=headers)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 144, in simple_response
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/exceptions.py", line 62, in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 715, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 735, in app
-    await route.handle(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 288, in handle
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 76, in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 73, in app
-    response = await f(request)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 301, in app
-    raw_response = await run_endpoint_function(
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 214, in run_endpoint_function
-    return await run_in_threadpool(dependant.call, **values)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/concurrency.py", line 39, in run_in_threadpool
-    return await anyio.to_thread.run_sync(func, *args)
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/to_thread.py", line 63, in run_sync
-    return await get_async_backend().run_sync_in_worker_thread(
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 2596, in run_sync_in_worker_thread
-    return await future
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 1029, in run
-    result = context.run(func, *args)
-  File "/home/daniel/re-manager/backend/app/routers/portfolio.py", line 58, in portfolio_dashboard
-    return queries.portfolio_dashboard(db, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 216, in portfolio_dashboard
-    return _dashboard_payload(db, "portfolio_month_summary", "TRUE", {}, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 231, in _dashboard_payload
-    prior_from = _shift_month(date_from, -length)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 159, in _shift_month
-    return date(total // 12, total % 12 + 1, 1)
-ValueError: year -2023 is out of range
-INFO:     127.0.0.1:36154 - "GET /portfolio/monthly?from=0002-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36128 - "GET /portfolio/attention?from=0002-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36128 - "GET /portfolio/dashboard?from=0020-01-01&to=2026-06-01 HTTP/1.1" 500 Internal Server Error
-ERROR:    Exception in ASGI application
-Traceback (most recent call last):
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/protocols/http/httptools_impl.py", line 401, in run_asgi
-    result = await app(  # type: ignore[func-returns-value]
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/middleware/proxy_headers.py", line 70, in __call__
-    return await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/applications.py", line 1054, in __call__
-    await super().__call__(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/applications.py", line 113, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 187, in __call__
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 165, in __call__
-    await self.app(scope, receive, _send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 93, in __call__
-    await self.simple_response(scope, receive, send, request_headers=headers)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 144, in simple_response
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/exceptions.py", line 62, in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 715, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 735, in app
-    await route.handle(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 288, in handle
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 76, in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 73, in app
-    response = await f(request)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 301, in app
-    raw_response = await run_endpoint_function(
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 214, in run_endpoint_function
-    return await run_in_threadpool(dependant.call, **values)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/concurrency.py", line 39, in run_in_threadpool
-    return await anyio.to_thread.run_sync(func, *args)
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/to_thread.py", line 63, in run_sync
-    return await get_async_backend().run_sync_in_worker_thread(
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 2596, in run_sync_in_worker_thread
-    return await future
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 1029, in run
-    result = context.run(func, *args)
-  File "/home/daniel/re-manager/backend/app/routers/portfolio.py", line 58, in portfolio_dashboard
-    return queries.portfolio_dashboard(db, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 216, in portfolio_dashboard
-    return _dashboard_payload(db, "portfolio_month_summary", "TRUE", {}, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 231, in _dashboard_payload
-    prior_from = _shift_month(date_from, -length)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 159, in _shift_month
-    return date(total // 12, total % 12 + 1, 1)
-ValueError: year -1987 is out of range
-INFO:     127.0.0.1:36142 - "GET /portfolio/breakdown?from=0002-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:32774 - "GET /portfolio/monthly?from=0020-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:32774 - "GET /portfolio/dashboard?from=0202-01-01&to=2026-06-01 HTTP/1.1" 500 Internal Server Error
-ERROR:    Exception in ASGI application
-Traceback (most recent call last):
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/protocols/http/httptools_impl.py", line 401, in run_asgi
-    result = await app(  # type: ignore[func-returns-value]
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/middleware/proxy_headers.py", line 70, in __call__
-    return await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/applications.py", line 1054, in __call__
-    await super().__call__(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/applications.py", line 113, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 187, in __call__
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 165, in __call__
-    await self.app(scope, receive, _send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 93, in __call__
-    await self.simple_response(scope, receive, send, request_headers=headers)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 144, in simple_response
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/exceptions.py", line 62, in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 715, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 735, in app
-    await route.handle(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 288, in handle
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 76, in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 73, in app
-    response = await f(request)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 301, in app
-    raw_response = await run_endpoint_function(
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 214, in run_endpoint_function
-    return await run_in_threadpool(dependant.call, **values)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/concurrency.py", line 39, in run_in_threadpool
-    return await anyio.to_thread.run_sync(func, *args)
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/to_thread.py", line 63, in run_sync
-    return await get_async_backend().run_sync_in_worker_thread(
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 2596, in run_sync_in_worker_thread
-    return await future
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 1029, in run
-    result = context.run(func, *args)
-  File "/home/daniel/re-manager/backend/app/routers/portfolio.py", line 58, in portfolio_dashboard
-    return queries.portfolio_dashboard(db, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 216, in portfolio_dashboard
-    return _dashboard_payload(db, "portfolio_month_summary", "TRUE", {}, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 231, in _dashboard_payload
-    prior_from = _shift_month(date_from, -length)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 159, in _shift_month
-    return date(total // 12, total % 12 + 1, 1)
-ValueError: year -1623 is out of range
-INFO:     127.0.0.1:36154 - "GET /portfolio/attention?from=0020-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36154 - "GET /portfolio/monthly?from=0202-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:32776 - "GET /portfolio/attention?from=0202-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36154 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:32776 - "GET /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:32788 - "GET /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36154 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36142 - "GET /portfolio/breakdown?from=0020-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:32792 - "GET /portfolio/breakdown?from=0202-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36154 - "GET /portfolio/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:32792 - "GET /portfolio/dashboard?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:32788 - "GET /portfolio/breakdown?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36142 - "GET /portfolio/attention?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54432 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54402 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54418 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54402 - "GET /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54400 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54444 - "GET /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54432 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54430 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54430 - "GET /portfolio/dashboard?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54432 - "GET /portfolio/attention?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54444 - "GET /portfolio/monthly?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54400 - "GET /portfolio/breakdown?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57932 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57960 - "GET /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57918 - "GET /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57946 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57988 - "GET /portfolio/monthly?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "GET /portfolio/dashboard?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57978 - "GET /portfolio/attention?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57994 - "GET /portfolio/breakdown?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57994 - "OPTIONS /portfolio/dashboard?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57978 - "OPTIONS /portfolio/attention?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "OPTIONS /portfolio/monthly?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57988 - "OPTIONS /portfolio/breakdown?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57978 - "GET /portfolio/monthly?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57988 - "GET /portfolio/dashboard?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "GET /portfolio/attention?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57994 - "GET /portfolio/breakdown?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57994 - "OPTIONS /portfolio/dashboard?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "OPTIONS /portfolio/attention?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57988 - "OPTIONS /portfolio/monthly?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57978 - "OPTIONS /portfolio/breakdown?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57978 - "GET /portfolio/dashboard?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "GET /portfolio/monthly?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57988 - "GET /portfolio/attention?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57994 - "GET /portfolio/breakdown?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57994 - "OPTIONS /portfolio/dashboard?from=2026-02-01&to=2026-02-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57988 - "OPTIONS /portfolio/attention?from=2026-02-01&to=2026-02-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "OPTIONS /portfolio/monthly?from=2026-02-01&to=2026-02-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57978 - "OPTIONS /portfolio/breakdown?from=2026-02-01&to=2026-02-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "GET /portfolio/attention?from=2026-02-01&to=2026-02-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57978 - "GET /portfolio/dashboard?from=2026-02-01&to=2026-02-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57988 - "GET /portfolio/monthly?from=2026-02-01&to=2026-02-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57994 - "GET /portfolio/breakdown?from=2026-02-01&to=2026-02-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57994 - "OPTIONS /portfolio/dashboard?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57988 - "OPTIONS /portfolio/attention?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57978 - "OPTIONS /portfolio/monthly?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "OPTIONS /portfolio/breakdown?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57978 - "GET /portfolio/attention?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57988 - "GET /portfolio/monthly?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57994 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57994 - "OPTIONS /portfolio/dashboard?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57988 - "OPTIONS /portfolio/attention?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57978 - "OPTIONS /portfolio/monthly?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "OPTIONS /portfolio/breakdown?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57970 - "GET /portfolio/dashboard?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57978 - "GET /portfolio/attention?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57988 - "GET /portfolio/monthly?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57994 - "GET /portfolio/breakdown?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54088 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54092 - "GET /portfolio/monthly?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54106 - "GET /portfolio/attention?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54122 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60474 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60488 - "OPTIONS /portfolio/dashboard?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60502 - "OPTIONS /portfolio/attention?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60510 - "OPTIONS /portfolio/monthly?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60512 - "OPTIONS /portfolio/breakdown?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60502 - "GET /portfolio/attention?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60488 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60510 - "GET /portfolio/monthly?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60512 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60474 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60138 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60140 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60144 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60152 - "OPTIONS /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60158 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60138 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60140 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60144 - "OPTIONS /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60152 - "OPTIONS /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60158 - "OPTIONS /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60138 - "OPTIONS /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60144 - "OPTIONS /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60144 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60138 - "GET /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60158 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60152 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60144 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60152 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60144 - "GET /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60152 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60158 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60138 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60130 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60130 - "OPTIONS /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60158 - "OPTIONS /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60152 - "OPTIONS /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60144 - "OPTIONS /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60130 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60144 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60152 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60158 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60138 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60140 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60158 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60140 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60138 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60138 - "OPTIONS /portfolio/dashboard?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60140 - "OPTIONS /portfolio/attention?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60158 - "OPTIONS /portfolio/monthly?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60152 - "OPTIONS /portfolio/breakdown?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60152 - "GET /portfolio/dashboard?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60140 - "GET /portfolio/monthly?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60158 - "GET /portfolio/attention?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60138 - "GET /portfolio/breakdown?from=2025-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60138 - "OPTIONS /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60158 - "OPTIONS /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60140 - "OPTIONS /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60152 - "OPTIONS /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60140 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60138 - "GET /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60152 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60158 - "GET /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35972 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35982 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35998 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36014 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "GET /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "GET /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36690 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "OPTIONS /portfolio/dashboard?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36690 - "OPTIONS /portfolio/attention?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "OPTIONS /portfolio/monthly?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "OPTIONS /portfolio/breakdown?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36690 - "GET /portfolio/dashboard?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "GET /portfolio/monthly?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "GET /portfolio/attention?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "GET /portfolio/breakdown?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "OPTIONS /portfolio/dashboard?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "OPTIONS /portfolio/attention?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "OPTIONS /portfolio/monthly?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36690 - "OPTIONS /portfolio/breakdown?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36690 - "GET /portfolio/monthly?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "GET /portfolio/dashboard?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "GET /portfolio/breakdown?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "GET /portfolio/attention?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "OPTIONS /portfolio/dashboard?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "OPTIONS /portfolio/attention?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "OPTIONS /portfolio/monthly?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36690 - "OPTIONS /portfolio/breakdown?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "GET /portfolio/monthly?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36690 - "GET /portfolio/dashboard?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "GET /portfolio/breakdown?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "GET /portfolio/attention?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "OPTIONS /portfolio/dashboard?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "OPTIONS /portfolio/attention?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36690 - "OPTIONS /portfolio/monthly?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "OPTIONS /portfolio/breakdown?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36690 - "GET /portfolio/dashboard?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "GET /portfolio/monthly?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "GET /portfolio/attention?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "GET /portfolio/breakdown?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "OPTIONS /portfolio/dashboard?from=2024-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "OPTIONS /portfolio/monthly?from=2024-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "OPTIONS /portfolio/attention?from=2024-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36690 - "OPTIONS /portfolio/breakdown?from=2024-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36690 - "GET /portfolio/dashboard?from=2024-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "GET /portfolio/monthly?from=2024-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "GET /portfolio/attention?from=2024-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "GET /portfolio/breakdown?from=2024-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "OPTIONS /portfolio/dashboard?from=0002-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "OPTIONS /portfolio/attention?from=0002-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "OPTIONS /portfolio/monthly?from=0002-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36690 - "OPTIONS /portfolio/breakdown?from=0002-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36690 - "GET /portfolio/dashboard?from=0002-03-01&to=2026-06-01 HTTP/1.1" 500 Internal Server Error
-ERROR:    Exception in ASGI application
-Traceback (most recent call last):
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/protocols/http/httptools_impl.py", line 401, in run_asgi
-    result = await app(  # type: ignore[func-returns-value]
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/middleware/proxy_headers.py", line 70, in __call__
-    return await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/applications.py", line 1054, in __call__
-    await super().__call__(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/applications.py", line 113, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 187, in __call__
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 165, in __call__
-    await self.app(scope, receive, _send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 93, in __call__
-    await self.simple_response(scope, receive, send, request_headers=headers)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 144, in simple_response
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/exceptions.py", line 62, in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 715, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 735, in app
-    await route.handle(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 288, in handle
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 76, in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 73, in app
-    response = await f(request)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 301, in app
-    raw_response = await run_endpoint_function(
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 214, in run_endpoint_function
-    return await run_in_threadpool(dependant.call, **values)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/concurrency.py", line 39, in run_in_threadpool
-    return await anyio.to_thread.run_sync(func, *args)
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/to_thread.py", line 63, in run_sync
-    return await get_async_backend().run_sync_in_worker_thread(
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 2596, in run_sync_in_worker_thread
-    return await future
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 1029, in run
-    result = context.run(func, *args)
-  File "/home/daniel/re-manager/backend/app/routers/portfolio.py", line 58, in portfolio_dashboard
-    return queries.portfolio_dashboard(db, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 216, in portfolio_dashboard
-    return _dashboard_payload(db, "portfolio_month_summary", "TRUE", {}, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 231, in _dashboard_payload
-    prior_from = _shift_month(date_from, -length)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 159, in _shift_month
-    return date(total // 12, total % 12 + 1, 1)
-ValueError: year -2023 is out of range
-INFO:     127.0.0.1:36024 - "GET /portfolio/monthly?from=0002-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "OPTIONS /portfolio/dashboard?from=0202-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "OPTIONS /portfolio/attention?from=0202-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "OPTIONS /portfolio/monthly?from=0202-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "OPTIONS /portfolio/breakdown?from=0202-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36024 - "GET /portfolio/dashboard?from=0202-03-01&to=2026-06-01 HTTP/1.1" 500 Internal Server Error
-ERROR:    Exception in ASGI application
-Traceback (most recent call last):
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/protocols/http/httptools_impl.py", line 401, in run_asgi
-    result = await app(  # type: ignore[func-returns-value]
-  File "/home/daniel/re-manager/backend/.pydeps/uvicorn/middleware/proxy_headers.py", line 70, in __call__
-    return await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/applications.py", line 1054, in __call__
-    await super().__call__(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/applications.py", line 113, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 187, in __call__
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/errors.py", line 165, in __call__
-    await self.app(scope, receive, _send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 93, in __call__
-    await self.simple_response(scope, receive, send, request_headers=headers)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/cors.py", line 144, in simple_response
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/middleware/exceptions.py", line 62, in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 715, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 735, in app
-    await route.handle(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 288, in handle
-    await self.app(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 76, in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 62, in wrapped_app
-    raise exc
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/_exception_handler.py", line 51, in wrapped_app
-    await app(scope, receive, sender)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/routing.py", line 73, in app
-    response = await f(request)
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 301, in app
-    raw_response = await run_endpoint_function(
-  File "/home/daniel/re-manager/backend/.pydeps/fastapi/routing.py", line 214, in run_endpoint_function
-    return await run_in_threadpool(dependant.call, **values)
-  File "/home/daniel/re-manager/backend/.pydeps/starlette/concurrency.py", line 39, in run_in_threadpool
-    return await anyio.to_thread.run_sync(func, *args)
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/to_thread.py", line 63, in run_sync
-    return await get_async_backend().run_sync_in_worker_thread(
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 2596, in run_sync_in_worker_thread
-    return await future
-  File "/home/daniel/re-manager/backend/.pydeps/anyio/_backends/_asyncio.py", line 1029, in run
-    result = context.run(func, *args)
-  File "/home/daniel/re-manager/backend/app/routers/portfolio.py", line 58, in portfolio_dashboard
-    return queries.portfolio_dashboard(db, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 216, in portfolio_dashboard
-    return _dashboard_payload(db, "portfolio_month_summary", "TRUE", {}, date_from, date_to)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 231, in _dashboard_payload
-    prior_from = _shift_month(date_from, -length)
-  File "/home/daniel/re-manager/backend/app/queries.py", line 159, in _shift_month
-    return date(total // 12, total % 12 + 1, 1)
-ValueError: year -1623 is out of range
-INFO:     127.0.0.1:36692 - "GET /portfolio/attention?from=0002-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "GET /portfolio/breakdown?from=0002-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "GET /portfolio/attention?from=0202-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "GET /portfolio/monthly?from=0202-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "GET /portfolio/breakdown?from=0202-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "OPTIONS /portfolio/dashboard?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "OPTIONS /portfolio/attention?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53262 - "OPTIONS /portfolio/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53266 - "OPTIONS /portfolio/breakdown?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53266 - "GET /portfolio/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53262 - "GET /portfolio/dashboard?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36692 - "GET /portfolio/breakdown?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36704 - "GET /portfolio/attention?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53274 - "OPTIONS /portfolio/dashboard?from=2026-01-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53274 - "OPTIONS /portfolio/attention?from=2026-01-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53274 - "OPTIONS /portfolio/monthly?from=2026-01-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53274 - "OPTIONS /portfolio/breakdown?from=2026-01-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53274 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53274 - "GET /portfolio/attention?from=2026-01-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53274 - "GET /portfolio/monthly?from=2026-01-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53274 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42388 - "GET /portfolio/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53274 - "GET /portfolio/dashboard?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42392 - "GET /portfolio/breakdown?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42398 - "GET /portfolio/attention?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42398 - "GET /portfolio/dashboard?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53274 - "GET /portfolio/monthly?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42392 - "GET /portfolio/attention?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42388 - "GET /portfolio/breakdown?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42388 - "GET /portfolio/dashboard?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53274 - "GET /portfolio/monthly?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42392 - "GET /portfolio/attention?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42398 - "GET /portfolio/breakdown?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53274 - "GET /portfolio/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42398 - "GET /portfolio/dashboard?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42388 - "GET /portfolio/breakdown?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42392 - "GET /portfolio/attention?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36066 - "GET /portfolio/dashboard?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36070 - "GET /portfolio/attention?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36082 - "GET /portfolio/monthly?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36072 - "GET /portfolio/breakdown?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52914 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52930 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52914 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52926 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52930 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52938 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52914 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52926 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52940 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52956 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52938 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52930 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52940 - "OPTIONS /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52926 - "OPTIONS /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52914 - "OPTIONS /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52956 - "OPTIONS /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52940 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52926 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52938 - "GET /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52940 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52926 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52940 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52926 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52956 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52940 - "GET /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52938 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52930 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52930 - "OPTIONS /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52940 - "OPTIONS /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52956 - "OPTIONS /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52926 - "OPTIONS /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52930 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52926 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52940 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52956 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52938 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52914 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52956 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52938 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52914 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48456 - "OPTIONS /portfolio/breakdown?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48452 - "OPTIONS /portfolio/dashboard?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48454 - "OPTIONS /portfolio/attention?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48490 - "OPTIONS /portfolio/monthly?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48452 - "GET /portfolio/dashboard?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48490 - "GET /portfolio/monthly?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48456 - "GET /portfolio/attention?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48454 - "GET /portfolio/breakdown?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48506 - "OPTIONS /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48506 - "OPTIONS /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48506 - "OPTIONS /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48506 - "OPTIONS /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48506 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48506 - "GET /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48506 - "GET /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48506 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
 WARNING:  WatchFiles detected changes in 'app/queries.py'. Reloading...
 INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
-INFO:     Finished server process [150840]
-INFO:     Started server process [154285]
+INFO:     Finished server process [172719]
+INFO:     Started server process [176567]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     127.0.0.1:56760 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56764 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56760 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56770 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56764 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56782 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56760 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56788 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56770 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56782 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56798 - "OPTIONS /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56764 - "OPTIONS /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56760 - "OPTIONS /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56788 - "OPTIONS /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56798 - "OPTIONS /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56770 - "OPTIONS /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56782 - "OPTIONS /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56764 - "OPTIONS /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56760 - "OPTIONS /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56788 - "OPTIONS /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56760 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56764 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56770 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56798 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56760 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56782 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56764 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56788 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50166 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50180 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50166 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50188 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50192 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50180 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50202 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50166 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50188 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50218 - "OPTIONS /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50192 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50180 - "OPTIONS /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50202 - "OPTIONS /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50166 - "OPTIONS /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50218 - "OPTIONS /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50188 - "OPTIONS /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50188 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50218 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50166 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50202 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50202 - "OPTIONS /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50166 - "OPTIONS /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50218 - "OPTIONS /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50188 - "OPTIONS /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50188 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50202 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50218 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50166 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50224 - "OPTIONS /portfolio/dashboard?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50236 - "OPTIONS /portfolio/attention?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50246 - "OPTIONS /portfolio/monthly?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50262 - "OPTIONS /portfolio/breakdown?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50224 - "GET /portfolio/dashboard?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50236 - "GET /portfolio/attention?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50262 - "GET /portfolio/monthly?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50246 - "GET /portfolio/breakdown?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50246 - "OPTIONS /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50262 - "OPTIONS /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50236 - "OPTIONS /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50224 - "OPTIONS /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50236 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50262 - "GET /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50224 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50246 - "GET /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41612 - "OPTIONS /portfolio/dashboard?from=2026-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41612 - "OPTIONS /portfolio/attention?from=2026-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41612 - "OPTIONS /portfolio/monthly?from=2026-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41612 - "OPTIONS /portfolio/breakdown?from=2026-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41612 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41612 - "GET /portfolio/attention?from=2026-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41612 - "GET /portfolio/monthly?from=2026-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41612 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41612 - "OPTIONS /portfolio/dashboard?from=2026-04-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45836 - "OPTIONS /portfolio/attention?from=2026-04-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45846 - "OPTIONS /portfolio/monthly?from=2026-04-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45854 - "OPTIONS /portfolio/breakdown?from=2026-04-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45836 - "GET /portfolio/monthly?from=2026-04-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45854 - "GET /portfolio/dashboard?from=2026-04-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45846 - "GET /portfolio/attention?from=2026-04-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41612 - "GET /portfolio/breakdown?from=2026-04-01&to=2026-06-01 HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'app/queries.py'. Reloading...
 INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
-INFO:     Finished server process [154285]
-INFO:     Stopping reloader process [150837]
+INFO:     Finished server process [176567]
+INFO:     Started server process [176598]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:41418 - "GET /api/portfolio/breakdown HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52410 - "GET /portfolio/breakdown HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:52420 - "GET /api/v1/portfolio/breakdown HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49742 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49762 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49720 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49742 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49754 - "GET /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49720 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49742 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49754 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49720 - "GET /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49762 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49760 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49760 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49720 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49754 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49742 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49762 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49732 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49742 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49732 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49762 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38750 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38732 - "GET /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38730 - "GET /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38764 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38730 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38750 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38732 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38776 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54510 - "GET /portfolio/dashboard?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54532 - "GET /portfolio/attention?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54516 - "GET /portfolio/monthly?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54538 - "GET /portfolio/breakdown?from=2024-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54546 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54546 - "GET /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54546 - "GET /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54546 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'migrations/versions/0008_property_investment.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [176598]
+INFO:     Started server process [197812]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/models.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [197812]
+INFO:     Started server process [197861]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/schemas.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [197861]
+INFO:     Started server process [197930]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/queries.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [197930]
+INFO:     Started server process [198144]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/routers/investments.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [198144]
+INFO:     Started server process [198223]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [198223]
+INFO:     Started server process [198258]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [198258]
+INFO:     Started server process [198284]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'verify_phase10.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [198284]
+INFO:     Started server process [198553]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:34910 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48182 - "POST /auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48192 - "GET /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53134 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53136 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53144 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53134 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53136 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53152 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53144 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53148 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53134 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53166 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53152 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53136 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53144 - "OPTIONS /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53148 - "OPTIONS /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53134 - "OPTIONS /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53166 - "OPTIONS /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53166 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53152 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53148 - "GET /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53144 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53166 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53152 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53144 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53152 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53166 - "GET /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53148 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53136 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53136 - "OPTIONS /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53166 - "OPTIONS /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53152 - "OPTIONS /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53144 - "OPTIONS /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53144 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53166 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53152 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53136 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53148 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53134 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53136 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53152 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53148 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53148 - "OPTIONS /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53152 - "OPTIONS /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53152 - "GET /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53148 - "GET /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49340 - "OPTIONS /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "OPTIONS /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "GET /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49340 - "GET /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49340 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49340 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49340 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49340 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49340 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49340 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49368 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49368 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49340 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41906 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41906 - "PUT /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41906 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41910 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41910 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41910 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41910 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41910 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41910 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48110 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48126 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48110 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/units/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48128 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/dashboard?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48126 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48144 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/attention?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48110 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48146 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48150 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/units/roster?month=2026-06-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48128 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48126 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/units/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48144 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48128 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/dashboard?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48150 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48146 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/units/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48126 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/attention?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48144 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48128 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/monthly?from=2026-03-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48146 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48126 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/units/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48150 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/units/roster?month=2026-06-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48110 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48110 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/dashboard?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48150 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/attention?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48126 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/units/roster?month=2025-12-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48146 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/monthly?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48128 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/units/monthly?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48146 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/dashboard?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48126 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/units/roster?month=2025-12-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48110 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/monthly?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48150 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/units/monthly?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48128 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/attention?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60092 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/dashboard?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60096 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/attention?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60106 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60110 - "OPTIONS /properties/798dc0f8-993e-444b-8bf3-a751438356e1/units/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60096 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/dashboard?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60110 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60106 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/units/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60092 - "GET /properties/798dc0f8-993e-444b-8bf3-a751438356e1/attention?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-12-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-12-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54024 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53998 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2025-12-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60124 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53998 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54012 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54024 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45286 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/investment HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45286 - "PUT /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/investment HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45286 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-12-01&to=2025-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-12-01&to=2025-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-11-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-11-01&to=2025-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-12-01&to=2025-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-11-01&to=2025-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-10-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-12-01&to=2025-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-11-01&to=2025-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-11-01&to=2025-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-11-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-12-01&to=2025-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-11-01&to=2025-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-10-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-12-01&to=2025-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-10-01&to=2025-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-10-01&to=2025-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-11-01&to=2025-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-09-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-10-01&to=2025-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-10-01&to=2025-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-09-01&to=2025-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-09-01&to=2025-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-08-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-09-01&to=2025-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-09-01&to=2025-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-12-01&to=2025-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-11-01&to=2025-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-10-01&to=2025-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-09-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-10-01&to=2025-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-12-01&to=2025-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-08-01&to=2025-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-08-01&to=2025-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-07-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-08-01&to=2025-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-08-01&to=2025-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-07-01&to=2025-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-07-01&to=2025-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-06-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-10-01&to=2025-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-07-01&to=2025-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-07-01&to=2025-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-06-01&to=2025-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-06-01&to=2025-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-09-01&to=2025-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-05-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-06-01&to=2025-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-06-01&to=2025-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-05-01&to=2025-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-05-01&to=2025-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-04-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-05-01&to=2025-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-05-01&to=2025-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-04-01&to=2025-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-04-01&to=2025-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-03-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-04-01&to=2025-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-04-01&to=2025-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-11-01&to=2025-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-03-01&to=2025-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-03-01&to=2025-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-02-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-03-01&to=2025-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-03-01&to=2025-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-02-01&to=2025-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-02-01&to=2025-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-01-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-02-01&to=2025-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-02-01&to=2025-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-01-01&to=2024-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-01-01&to=2024-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-12-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-01-01&to=2024-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-01-01&to=2024-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-10-01&to=2025-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-09-01&to=2025-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-09-01&to=2025-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-08-01&to=2025-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-08-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-07-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-09-01&to=2025-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-08-01&to=2025-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-08-01&to=2025-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-07-01&to=2025-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-06-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-07-01&to=2025-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-06-01&to=2025-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-07-01&to=2025-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-05-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-06-01&to=2025-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-06-01&to=2025-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-08-01&to=2025-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-04-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-07-01&to=2025-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-05-01&to=2025-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-05-01&to=2025-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-05-01&to=2025-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-03-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-04-01&to=2025-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-03-01&to=2025-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-06-01&to=2025-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-04-01&to=2025-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-04-01&to=2025-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-05-01&to=2025-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-02-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-03-01&to=2025-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-03-01&to=2025-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-02-01&to=2025-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-01-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-04-01&to=2025-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-02-01&to=2025-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-02-01&to=2025-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-01-01&to=2024-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-01-01&to=2024-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-12-01&to=2024-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-12-01&to=2024-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-11-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-03-01&to=2025-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-12-01&to=2024-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-12-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-12-01&to=2024-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-11-01&to=2024-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-11-01&to=2024-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-10-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-11-01&to=2024-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-11-01&to=2024-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-01-01&to=2024-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-02-01&to=2025-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-11-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-12-01&to=2024-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-12-01&to=2024-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-11-01&to=2024-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-12-01&to=2024-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-10-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-01-01&to=2024-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-11-01&to=2024-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-11-01&to=2024-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-12-01&to=2024-11-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-11-01&to=2024-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-10-01&to=2024-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-10-01&to=2024-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-09-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-10-01&to=2024-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-10-01&to=2024-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-09-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-10-01&to=2024-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-10-01&to=2024-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-10-01&to=2024-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-10-01&to=2024-09-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-09-01&to=2024-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-09-01&to=2024-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-08-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-09-01&to=2024-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-09-01&to=2024-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-08-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-09-01&to=2024-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-09-01&to=2024-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-09-01&to=2024-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-09-01&to=2024-08-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-08-01&to=2024-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-08-01&to=2024-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-07-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-08-01&to=2024-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-08-01&to=2024-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-07-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-08-01&to=2024-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-08-01&to=2024-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-08-01&to=2024-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-08-01&to=2024-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-07-01&to=2024-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-07-01&to=2024-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-06-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-07-01&to=2024-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-07-01&to=2024-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-06-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-07-01&to=2024-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-07-01&to=2024-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-07-01&to=2024-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-07-01&to=2024-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-06-01&to=2024-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-06-01&to=2024-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-05-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-06-01&to=2024-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-06-01&to=2024-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-05-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-06-01&to=2024-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-06-01&to=2024-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-06-01&to=2024-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-06-01&to=2024-05-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-05-01&to=2024-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-05-01&to=2024-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-04-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-05-01&to=2024-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-05-01&to=2024-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-04-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-05-01&to=2024-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-05-01&to=2024-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-05-01&to=2024-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-05-01&to=2024-04-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-04-01&to=2024-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-04-01&to=2024-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-03-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-04-01&to=2024-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-04-01&to=2024-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-04-01&to=2024-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-04-01&to=2024-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-03-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-04-01&to=2024-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-04-01&to=2024-03-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-03-01&to=2024-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-03-01&to=2024-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-02-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-03-01&to=2024-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-03-01&to=2024-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-03-01&to=2024-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-02-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-03-01&to=2024-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-03-01&to=2024-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-03-01&to=2024-02-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-02-01&to=2024-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-02-01&to=2024-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-01-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-02-01&to=2024-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-02-01&to=2024-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37956 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2023-02-01&to=2024-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37964 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-01-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37950 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2023-02-01&to=2024-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37980 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2023-02-01&to=2024-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37934 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2023-02-01&to=2024-01-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51808 - "PUT /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/investment HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51808 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51816 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-01-01&to=2024-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51816 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2024-12-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51816 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-01-01&to=2024-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51816 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-01-01&to=2024-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51816 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-01-01&to=2024-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49216 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49224 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/roster?month=2025-12-01&sort=unit_number&order=asc&limit=25&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49202 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49228 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51816 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51816 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49228 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49202 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49224 - "OPTIONS /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49228 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2024-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49224 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2024-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49202 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2024-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51816 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51816 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/dashboard?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49224 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49228 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/units/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49202 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'app/queries.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [198553]
+INFO:     Started server process [208689]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/queries.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [208689]
+INFO:     Started server process [208745]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'verify_phase10.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [208745]
+INFO:     Started server process [209060]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:50968 - "OPTIONS /units/ec551529-8213-4021-a69b-5f12ace5f3e5/detail HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50976 - "OPTIONS /units/ec551529-8213-4021-a69b-5f12ace5f3e5/detail HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50968 - "GET /units/ec551529-8213-4021-a69b-5f12ace5f3e5/detail HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50976 - "GET /units/ec551529-8213-4021-a69b-5f12ace5f3e5/detail HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58254 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58270 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58284 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58254 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58270 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58288 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58284 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58300 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58270 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58254 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58316 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58288 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58300 - "OPTIONS /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58284 - "OPTIONS /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58270 - "OPTIONS /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58316 - "OPTIONS /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58270 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58288 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58316 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58254 - "GET /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58288 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58270 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58254 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58288 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58270 - "GET /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58316 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58300 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58316 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58300 - "OPTIONS /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58270 - "OPTIONS /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58288 - "OPTIONS /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58254 - "OPTIONS /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58284 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58270 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58254 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58288 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58300 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58316 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58254 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58284 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59092 - "OPTIONS /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59090 - "OPTIONS /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59090 - "GET /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59090 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59112 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59090 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59112 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59090 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59090 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59092 - "GET /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59112 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59092 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59092 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59092 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59112 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59090 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59090 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59112 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59092 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59092 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59090 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59112 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59140 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59140 - "PUT /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59140 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59130 - "OPTIONS /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59116 - "OPTIONS /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59116 - "GET /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59130 - "GET /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53200 - "GET /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53200 - "GET /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53200 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53200 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53200 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53200 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53200 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53200 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53200 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53200 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53200 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK

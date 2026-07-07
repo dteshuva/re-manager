@@ -3,15 +3,17 @@ import { login } from "./api";
 import Dashboard from "./views/Dashboard";
 import Entry from "./views/Entry";
 import ImportView from "./views/Import";
+import Investments from "./views/Investments";
 import Manage from "./views/Manage";
 import PropertyDetail from "./views/PropertyDetail";
 import Reclassify from "./views/Reclassify";
 
-type Tab = "dashboard" | "property" | "entry" | "import" | "manage" | "reclassify";
+type Tab = "dashboard" | "property" | "investments" | "entry" | "import" | "manage" | "reclassify";
 
 const TABS: { id: Tab; label: string; icon: string; title: string; sub: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▤", title: "Portfolio Dashboard", sub: "Consolidated monthly P&L across every property." },
   { id: "property", label: "Property", icon: "▦", title: "Property Detail", sub: "Drill into a single property and its units." },
+  { id: "investments", label: "Investments", icon: "◈", title: "Investment Insights", sub: "Cap rate, cash-on-cash and DSCR per property." },
   { id: "entry", label: "Data Entry", icon: "✎", title: "Data Entry", sub: "Record and post monthly line items." },
   { id: "import", label: "Import", icon: "⤓", title: "Bulk Import", sub: "Load CSV or Excel statements." },
   { id: "manage", label: "Manage", icon: "⚙", title: "Manage", sub: "Properties, units and categories." },
@@ -157,6 +159,7 @@ export default function App() {
         <div className="content">
           {tab === "dashboard" && <Dashboard token={token} />}
           {tab === "property" && <PropertyDetail token={token} />}
+          {tab === "investments" && <Investments token={token} />}
           {tab === "entry" && <Entry token={token} />}
           {tab === "import" && <ImportView token={token} />}
           {tab === "manage" && <Manage token={token} />}

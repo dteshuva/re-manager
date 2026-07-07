@@ -647,3 +647,64 @@ export async function extractStatementsBatch(
   }
   return data as StatementBatchPreview;
 }
+
+// ==================== Investment insights (acquisition inputs + returns) =====
+// Inputs are stored; every metric is computed on read from those inputs + the
+// property_month_summary rollup, so they always track the current P&L.
+export interface PropertyInvestmentInput {
+  purchase_price: number;
+  closing_costs: number;
+  loan_amount: number; // 0 = all-cash
+  purchase_date: string; // YYYY-MM-DD
+}
+
+export interface PropertyInvestmentOut extends PropertyInvestmentInput {
+  property_id: string;
+  equity_invested: number; // purchase_price - loan_amount + closing_costs
+  updated_at: string;
+}
+
+// Metrics are null when they can't be computed honestly (see backend gates):
+// cash_on_cash needs >=12 months of data; avg_cash_on_cash needs >=24; dscr needs
+// recorded debt service. `annualized` marks a <12-month trailing window (cap rate only).
+export interface InvestmentMetrics {
+  property_id: string;
+  property_name: string;
+  type: "multifamily" | "single";
+  purchase_price: number | null;
+  closing_costs: number | null;
+  loan_amount: number | null;
+  purchase_date: string | null;
+  equity_invested: number | null;
+  months_available: number;
+  t12_months: number;
+  t12_noi: number | null;
+  t12_cash_flow: number | null;
+  t12_debt_service: number | null;
+  annualized: boolean;
+  cap_rate: number | null;
+  cash_on_cash: number | null;
+  dscr: number | null;
+  avg_cash_on_cash: number | null;
+}
+
+export interface PortfolioInvestment {
+  properties: InvestmentMetrics[];
+  cap_rate: number | null; // Σ annualized-NOI / Σ price (value-weighted)
+  cash_on_cash: number | null; // Σ T12 cash flow / Σ equity (>=12mo props only)
+  dscr: number | null; // Σ T12 NOI / Σ T12 debt (props with debt)
+  total_purchase_price: number;
+  total_equity_invested: number;
+  cap_rate_property_count: number;
+  cash_on_cash_property_count: number;
+  dscr_property_count: number;
+}
+
+export const getInvestmentMetrics = (t: string, id: string) =>
+  getJson<InvestmentMetrics>(t, `/properties/${id}/investment/metrics`);
+export const putInvestment = (t: string, id: string, body: PropertyInvestmentInput) =>
+  request<PropertyInvestmentOut>(t, "PUT", `/properties/${id}/investment`, body);
+export const deleteInvestment = (t: string, id: string) =>
+  request<void>(t, "DELETE", `/properties/${id}/investment`);
+export const getPortfolioInvestment = (t: string) =>
+  getJson<PortfolioInvestment>(t, "/investments");

@@ -16,6 +16,7 @@ import {
   type UnitRoster,
 } from "../api";
 import AttentionFeed from "../components/AttentionFeed";
+import InvestmentPanel from "../components/InvestmentPanel";
 import KpiBand from "../components/KpiBand";
 import PeriodSelector from "../components/PeriodSelector";
 import PnlTrendChart from "../components/PnlTrendChart";
@@ -152,6 +153,8 @@ export default function PropertyDetail({ token }: { token: string }) {
       )}
 
       {dashboard && <KpiBand data={dashboard} />}
+
+      {propertyId && <InvestmentPanel token={token} propertyId={propertyId} />}
 
       <h3 className="section-title">Needs attention</h3>
       {feed && (

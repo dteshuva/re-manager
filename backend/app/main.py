@@ -6,6 +6,7 @@ from app.routers import (
     auth,
     categories,
     imports,
+    investments,
     periods,
     portfolio,
     properties,
@@ -42,6 +43,7 @@ app.include_router(units.router)
 app.include_router(categories.router)
 app.include_router(records.router)
 app.include_router(imports.router)
+app.include_router(investments.router)
 app.include_router(settings_router.router)
 
 

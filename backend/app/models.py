@@ -171,6 +171,36 @@ class LineItem(Base):
     )
 
 
+class PropertyInvestment(Base):
+    """Per-property acquisition inputs (migration 0008). Nullable 1:1 with ``properties``:
+    a property may have no investment row, in which case return metrics are unavailable.
+
+    Only the raw inputs are stored. ``equity_invested`` (= purchase_price - loan_amount +
+    closing_costs) and all return metrics are computed on read from these inputs plus the
+    ``property_month_summary`` rollup, never persisted — so they always reflect the current
+    P&L. ``loan_amount = 0`` means an all-cash purchase."""
+
+    __tablename__ = "property_investment"
+
+    property_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("properties.id", ondelete="CASCADE"), primary_key=True
+    )
+    purchase_price: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    closing_costs: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, server_default=text("0"))
+    loan_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, server_default=text("0"))
+    purchase_date: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("purchase_price >= 0", name="property_investment_purchase_price_nonneg"),
+        CheckConstraint("closing_costs >= 0", name="property_investment_closing_costs_nonneg"),
+        CheckConstraint("loan_amount >= 0", name="property_investment_loan_amount_nonneg"),
+    )
+
+
 class PeriodStatus(Base):
     """Per property-month workflow state: draft → posted → locked.
     Locked months are unlockable by an admin only (see app/routers/periods.py)."""

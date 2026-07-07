@@ -9,6 +9,9 @@ export const fmtCurrency = (n: number) =>
 export const fmtMonth = (iso: string) =>
   new Date(iso + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "short" });
 
+// A fraction (0.062) as a percent ("6.2%"). For rates like cap rate / cash-on-cash.
+export const fmtPct = (frac: number, digits = 1) => `${(frac * 100).toFixed(digits)}%`;
+
 export const card: CSSProperties = {
   background: "var(--surface)",
   border: "1px solid var(--border)",

@@ -492,3 +492,73 @@ class StatementBatchPreview(BaseModel):
     items: list[StatementBatchItem] = []
     unknown_properties: list[str] = []
     unknown_categories: list[UnknownCategory] = []
+
+
+# ---- Investment insights (per-property acquisition inputs + computed return metrics) ----
+class PropertyInvestmentIn(BaseModel):
+    """Acquisition inputs the operator enters. ``loan_amount = 0`` ⇒ all-cash purchase."""
+
+    purchase_price: float = Field(ge=0)
+    closing_costs: float = Field(default=0, ge=0)
+    loan_amount: float = Field(default=0, ge=0)
+    purchase_date: date
+
+
+class PropertyInvestmentOut(PropertyInvestmentIn):
+    property_id: str
+    equity_invested: float  # purchase_price - loan_amount + closing_costs
+    updated_at: datetime
+
+
+class InvestmentMetrics(BaseModel):
+    """Computed return metrics for one property, from acquisition inputs + the rollup.
+
+    Metrics are None when they can't be computed honestly:
+    - ``cash_on_cash``: needs >= 12 months of data (cash flow is lumpy — never annualize a stub).
+    - ``avg_cash_on_cash``: needs >= 24 months (otherwise it just echoes cash-on-cash).
+    - ``dscr``: needs recorded debt service (> 0).
+    - anything: needs a positive equity / purchase price and at least one summarized month.
+
+    ``annualized`` is True when the trailing window has < 12 months (cap rate is annualized from
+    what's there, with this caveat). All time math keys off months WITH data, not purchase_date."""
+
+    property_id: str
+    property_name: str
+    type: str
+    # Echoed inputs (None when the property has no investment row yet).
+    purchase_price: float | None = None
+    closing_costs: float | None = None
+    loan_amount: float | None = None
+    purchase_date: date | None = None
+    equity_invested: float | None = None
+    # Supporting figures.
+    months_available: int = 0          # total summarized months since purchase
+    t12_months: int = 0                # months in the trailing-12 window (<12 ⇒ annualized)
+    t12_noi: float | None = None
+    t12_cash_flow: float | None = None
+    t12_debt_service: float | None = None
+    annualized: bool = False
+    # The four headline metrics (fractions, e.g. 0.062 = 6.2% cap; DSCR is a bare ratio).
+    cap_rate: float | None = None
+    cash_on_cash: float | None = None
+    dscr: float | None = None
+    avg_cash_on_cash: float | None = None
+
+
+class PortfolioInvestment(BaseModel):
+    """Every property that has investment inputs, plus value-weighted portfolio aggregates.
+
+    Aggregates are component sums (Σ NOI / Σ price, Σ cash flow / Σ equity), i.e. the natural
+    value-weighted average — never a mean of per-property percentages. Each aggregate is scoped
+    only to the properties eligible for that metric (e.g. portfolio cash-on-cash counts only
+    properties with >= 12 months of data), and ``*_property_count`` reports how many rolled in."""
+
+    properties: list[InvestmentMetrics] = []
+    cap_rate: float | None = None
+    cash_on_cash: float | None = None
+    dscr: float | None = None
+    total_purchase_price: float = 0
+    total_equity_invested: float = 0
+    cap_rate_property_count: int = 0
+    cash_on_cash_property_count: int = 0
+    dscr_property_count: int = 0
