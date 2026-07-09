@@ -22,8 +22,15 @@ export default function PnlTrendChart({
   if (data.length === 0) return null;
   const chartData = data.map((r) => ({ ...r, label: fmtMonth(r.month) }));
   const money = (v: number | string) => fmtCurrency(Number(v));
+  const first = data[0];
+  const last = data[data.length - 1];
+  const noiDir = last.noi === first.noi ? "flat" : last.noi > first.noi ? "up" : "down";
+  const trendLabel =
+    `NOI and cash flow trend, ${data.length} month${data.length === 1 ? "" : "s"} ` +
+    `from ${fmtMonth(first.month)} to ${fmtMonth(last.month)}, NOI trending ${noiDir} overall. ` +
+    "See the table below for exact monthly figures.";
   return (
-    <div style={{ ...card, height, padding: "18px 16px 8px" }}>
+    <div style={{ ...card, height, padding: "18px 16px 8px" }} role="img" aria-label={trendLabel}>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />

@@ -9,8 +9,33 @@ export const fmtCurrency = (n: number) =>
 export const fmtMonth = (iso: string) =>
   new Date(iso + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "short" });
 
+// Full local date + time for timestamped rows (e.g. audit log entries).
+export const fmtDateTime = (iso: string) =>
+  new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+
 // A fraction (0.062) as a percent ("6.2%"). For rates like cap rate / cash-on-cash.
 export const fmtPct = (frac: number, digits = 1) => `${(frac * 100).toFixed(digits)}%`;
+
+// The dashboard endpoints auto-compute "prior period" as the immediately preceding period
+// of equal length — which lands exactly one calendar year back whenever the selected span
+// is exactly 12 months (a full-year Range, a T12 window, or any 12-month custom span).
+// That's a genuine year-over-year comparison; this just detects it so the UI can label it
+// as such instead of a generic "vs prior period" (the capability already existed
+// server-side, it just wasn't surfaced).
+export function isYoyComparison(
+  from: string | null | undefined,
+  to: string | null | undefined,
+  priorFrom: string | null | undefined,
+  priorTo: string | null | undefined,
+): boolean {
+  if (!from || !to || !priorFrom || !priorTo) return false;
+  const monthsBetween = (a: string, b: string) => {
+    const [ay, am] = a.slice(0, 7).split("-").map(Number);
+    const [by, bm] = b.slice(0, 7).split("-").map(Number);
+    return (by - ay) * 12 + (bm - am);
+  };
+  return monthsBetween(priorFrom, from) === 12 && monthsBetween(priorTo, to) === 12;
+}
 
 export const card: CSSProperties = {
   background: "var(--surface)",

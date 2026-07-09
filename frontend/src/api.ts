@@ -75,6 +75,15 @@ export async function login(email: string, password: string): Promise<string> {
   return data.access_token as string;
 }
 
+// Central 401 hook: App.tsx registers a handler (force logout) once at startup so an
+// expired/invalid token surfaces as "you were signed out," not a generic error banner
+// repeated in every view that happens to fetch next. Views' own .catch(setError) still
+// runs too (request() still throws), this just adds the app-wide side effect.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
 async function request<T>(
   token: string,
   method: string,
@@ -90,6 +99,7 @@ async function request<T>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
+    if (res.status === 401) onUnauthorized?.();
     // FastAPI puts the human-readable message in `detail`.
     let detail = `${res.status}`;
     try {
@@ -224,6 +234,10 @@ export interface AttentionItem {
   pct_change: number | null;
   detail: Record<string, unknown>;
   label: string;
+  // Set when many near-identical unit-level items (same property/month/type) were
+  // collapsed into this one summary line; count is how many units were rolled up.
+  rolled_up: boolean;
+  count: number | null;
 }
 
 export interface AttentionFeed {
@@ -708,3 +722,30 @@ export const deleteInvestment = (t: string, id: string) =>
   request<void>(t, "DELETE", `/properties/${id}/investment`);
 export const getPortfolioInvestment = (t: string) =>
   getJson<PortfolioInvestment>(t, "/investments");
+
+// ==================== Audit log (admin-only, read-only) ======================
+// audit_log is written today by POST /periods/{id}/unlock; this just reads it back so
+// "who reopened a locked month and why" is answerable without a DB console.
+export interface AuditLogEntry {
+  id: string;
+  user_id: string | null;
+  user_email: string | null;
+  action: string;
+  entity: string;
+  entity_id: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export function getAuditLog(
+  token: string,
+  opts: { limit?: number; offset?: number; entity?: string } = {},
+): Promise<AuditLogEntry[]> {
+  const p = new URLSearchParams();
+  if (opts.limit != null) p.set("limit", String(opts.limit));
+  if (opts.offset != null) p.set("offset", String(opts.offset));
+  if (opts.entity) p.set("entity", opts.entity);
+  const q = p.toString();
+  return getJson(token, `/audit${q ? `?${q}` : ""}`);
+}

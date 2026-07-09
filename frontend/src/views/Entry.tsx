@@ -16,7 +16,12 @@ import {
   type Unit,
 } from "../api";
 
-type Row = { category_id: string; amount: string };
+// `id` is a stable client-side key (backend line item id when loaded, a fresh uuid for a
+// row added in this session) — never the array index, so deleting/reordering rows can't
+// misattribute focus/state to the wrong DOM node.
+type Row = { id: string; category_id: string; amount: string };
+
+const newRow = (): Row => ({ id: crypto.randomUUID(), category_id: "", amount: "" });
 
 const thisMonth = () => new Date().toISOString().slice(0, 7); // YYYY-MM
 
@@ -45,47 +50,62 @@ export default function Entry({ token }: { token: string }) {
   const locked = period?.status === "locked";
 
   useEffect(() => {
-    listProperties(token).then(setProperties).catch((e) => setError(e.message));
-    listCategories(token, true).then(setCategories).catch((e) => setError(e.message));
+    let cancelled = false;
+    listProperties(token).then((r) => !cancelled && setProperties(r)).catch((e) => !cancelled && setError(e.message));
+    listCategories(token, true).then((r) => !cancelled && setCategories(r)).catch((e) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   // Units for the selected property (multifamily only).
   useEffect(() => {
+    let cancelled = false;
     setScope("");
     if (property?.type === "multifamily") {
-      listUnits(token, property.id).then(setUnits).catch((e) => setError(e.message));
+      listUnits(token, property.id).then((r) => !cancelled && setUnits(r)).catch((e) => !cancelled && setError(e.message));
     } else {
       setUnits([]);
     }
+    return () => {
+      cancelled = true;
+    };
   }, [propertyId]);
 
-  // Load the record + period status whenever scope/month changes.
+  // Load the record + period status whenever scope/month changes. `cancelled` guards
+  // against a slow, superseded request overwriting fresher state if the user switches
+  // property/scope/month again before this one resolves.
   useEffect(() => {
     if (!propertyId) return;
+    let cancelled = false;
     setMsg(null);
     setError(null);
     const unitId = scope || null;
     listRecords(token, { property_id: propertyId, month })
       .then((recs) => {
+        if (cancelled) return;
         const rec = recs.find((r) => r.unit_id === unitId) ?? null;
         setRecordId(rec?.id ?? null);
         setNotes(rec?.notes ?? "");
         setRows(
           rec && rec.line_items.length
-            ? rec.line_items.map((li) => ({ category_id: li.category_id, amount: String(li.amount) }))
-            : [{ category_id: "", amount: "" }],
+            ? rec.line_items.map((li) => ({ id: li.id, category_id: li.category_id, amount: String(li.amount) }))
+            : [newRow()],
         );
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => !cancelled && setError(e.message));
     listPeriods(token, { property_id: propertyId, month })
-      .then((ps) => setPeriod(ps[0] ?? null))
-      .catch((e) => setError(e.message));
+      .then((ps) => !cancelled && setPeriod(ps[0] ?? null))
+      .catch((e) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
   }, [propertyId, scope, monthStr]);
 
-  const addRow = () => setRows((r) => [...r, { category_id: "", amount: "" }]);
-  const setRow = (i: number, patch: Partial<Row>) =>
-    setRows((r) => r.map((row, j) => (j === i ? { ...row, ...patch } : row)));
-  const removeRow = (i: number) => setRows((r) => r.filter((_, j) => j !== i));
+  const addRow = () => setRows((r) => [...r, newRow()]);
+  const setRow = (id: string, patch: Partial<Row>) =>
+    setRows((r) => r.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  const removeRow = (id: string) => setRows((r) => r.filter((row) => row.id !== id));
 
   const catName = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c.name])), [categories]);
 
@@ -196,15 +216,15 @@ export default function Entry({ token }: { token: string }) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, i) => (
-                  <tr key={i}>
+                {rows.map((row) => (
+                  <tr key={row.id}>
                     <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)" }}>
                       <select
                         className="select"
                         style={{ width: "100%" }}
                         value={row.category_id}
                         disabled={locked}
-                        onChange={(e) => setRow(i, { category_id: e.target.value })}
+                        onChange={(e) => setRow(row.id, { category_id: e.target.value })}
                       >
                         <option value="">— category —</option>
                         {categories.map((c) => (
@@ -226,11 +246,11 @@ export default function Entry({ token }: { token: string }) {
                         step="0.01"
                         value={row.amount}
                         disabled={locked}
-                        onChange={(e) => setRow(i, { amount: e.target.value })}
+                        onChange={(e) => setRow(row.id, { amount: e.target.value })}
                       />
                     </td>
                     <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)" }}>
-                      <button className="btn btn-ghost" disabled={locked} onClick={() => removeRow(i)}>
+                      <button className="btn btn-ghost" disabled={locked} onClick={() => removeRow(row.id)}>
                         ✕
                       </button>
                     </td>
@@ -270,7 +290,7 @@ export default function Entry({ token }: { token: string }) {
                   deleteRecord(token, recordId)
                     .then(() => {
                       setRecordId(null);
-                      setRows([{ category_id: "", amount: "" }]);
+                      setRows([newRow()]);
                       setNotes("");
                       setMsg("Record deleted.");
                     })

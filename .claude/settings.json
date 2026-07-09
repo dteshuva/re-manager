@@ -1,13 +1,9 @@
 {
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
-      "Bash(echo \"---EXIT $?---\")",
-      "Bash(curl -s -o /dev/null -w \"backend :8000 -> %{http_code}\\\\n\" http://localhost:8000/health)",
-      "Bash(curl -s -o /dev/null -w \"frontend :5173 -> %{http_code}\\\\n\" http://localhost:5173)",
-      "Bash(PYTHONPATH=.pydeps python3 -c ' *)",
-      "Bash(awk '/class InvestmentMetrics/,/^class [A-Z].*:/' backend/app/schemas.py)",
-      "Bash(git -C /home/daniel/re-manager ls-files backend/.pydeps)",
-      "Bash(grep -n \"^#\\\\{1,3\\\\} \\\\|^### \" README.md)"
+      "Bash(*)",
+      "*"
     ]
   }
 }

@@ -6,17 +6,20 @@ import {
   createUnit,
   deleteProperty,
   deleteUnit,
+  getAuditLog,
+  getMe,
   listCategories,
   listProperties,
   listUnits,
   updateCategory,
+  type AuditLogEntry,
   type Category,
   type Classification,
   type Property,
   type Unit,
 } from "../api";
 import AttentionSettings from "../components/AttentionSettings";
-import { btn, btnPrimary, card, input } from "../ui";
+import { btn, btnPrimary, card, fmtDateTime, input } from "../ui";
 
 // Manage properties, their units, and the global category list. The category section
 // doubles as the reclassification control (changing default_classification recomputes
@@ -52,7 +55,90 @@ export default function Manage({ token }: { token: string }) {
 
       <h2 className="section-title">Attention thresholds</h2>
       <AttentionSettings token={token} />
+
+      <AuditLogSection token={token} />
     </section>
+  );
+}
+
+function AuditLogSection({ token }: { token: string }) {
+  const [rows, setRows] = useState<AuditLogEntry[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  // GET /audit is admin-only (server-gated). Mirror the graceful-degradation pattern
+  // AttentionSettings uses: resolve the current user first and only call the admin
+  // endpoint when they're an admin, so a member never triggers a 403 error banner.
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMe(token)
+      .then((m) => !cancelled && setIsAdmin(m.role === "admin"))
+      .catch(() => !cancelled && setIsAdmin(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+    setLoading(true);
+    getAuditLog(token, { limit: 100 })
+      .then((r) => !cancelled && setRows(r))
+      .catch((e) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [token, isAdmin]);
+
+  // Non-admins (or while the role is still resolving) see nothing — the audit log is an
+  // admin-only surface, so there's no read-only equivalent to show.
+  if (!isAdmin) return null;
+
+  return (
+    <div style={{ marginTop: 30 }}>
+      <h2 className="section-title">Audit log</h2>
+      <p className="hint">
+        Who changed what, and when — currently captured on every admin unlock of a locked
+        period. Most recent first.
+      </p>
+      {error && <p className="alert-error">{error}</p>}
+      {loading ? (
+        <p className="hint">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="hint">No audit events yet.</p>
+      ) : (
+        <table className="data-table" style={{ textAlign: "left" }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left" }}>When</th>
+              <th style={{ textAlign: "left" }}>Who</th>
+              <th style={{ textAlign: "left" }}>Action</th>
+              <th style={{ textAlign: "left" }}>Entity</th>
+              <th style={{ textAlign: "left" }}>Before → After</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td>{fmtDateTime(r.created_at)}</td>
+                <td>{r.user_email ?? "—"}</td>
+                <td>{r.action}</td>
+                <td>
+                  {r.entity}
+                  {r.entity_id ? ` (${r.entity_id.slice(0, 8)}…)` : ""}
+                </td>
+                <td>
+                  {r.before ? JSON.stringify(r.before) : "—"} → {r.after ? JSON.stringify(r.after) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 

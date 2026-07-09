@@ -36,10 +36,17 @@ function toneClass(change: number, expenseLike: boolean): string {
   return good ? "is-good" : "is-bad";
 }
 
-function Sparkline({ data, dataKey, color }: { data: TrendPoint[]; dataKey: string; color: string }) {
+function Sparkline({ data, dataKey, color, label }: { data: TrendPoint[]; dataKey: string; color: string; label: string }) {
   if (data.length < 2) return <div className="kpi-card__spark" />;
+  const first = data[0] as unknown as Record<string, number>;
+  const last = data[data.length - 1] as unknown as Record<string, number>;
+  const dir = last[dataKey] === first[dataKey] ? "flat" : last[dataKey] > first[dataKey] ? "up" : "down";
   return (
-    <div className="kpi-card__spark">
+    <div
+      className="kpi-card__spark"
+      role="img"
+      aria-label={`${label} trend over ${data.length} months, trending ${dir}`}
+    >
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 3, right: 1, bottom: 3, left: 1 }}>
           {/* domain padded so the line isn't clipped; axis hidden */}
@@ -96,7 +103,7 @@ export default function KpiBand({ data }: { data: KpiData }) {
             ) : (
               <div className="kpi-card__delta is-flat">no prior period</div>
             )}
-            <Sparkline data={trend} dataKey={key} color={color} />
+            <Sparkline data={trend} dataKey={key} color={color} label={label} />
           </div>
         );
       })}
@@ -117,7 +124,7 @@ export default function KpiBand({ data }: { data: KpiData }) {
             </span>
           </div>
         )}
-        <Sparkline data={trend.filter((t) => t.occupancy !== null)} dataKey="occupancy" color={CHART.noi} />
+        <Sparkline data={trend.filter((t) => t.occupancy !== null)} dataKey="occupancy" color={CHART.noi} label="Occupancy" />
       </div>
     </div>
   );

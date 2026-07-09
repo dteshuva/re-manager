@@ -72,6 +72,17 @@ class Thresholds:
         )
 
 
+# Roll-up tuning for the property-scoped unit-grain feed (see _cluster_and_rollup). A
+# building-wide event (e.g. one rent cut applied to every unit) produces N near-identical
+# per-unit items in the same month; collapsing those into one line is what keeps the
+# property feed from flooding with duplicates while still surfacing genuine per-unit
+# outliers individually.
+ROLLUP_MIN_COUNT = 3  # roll up only when a cluster has MORE than this many members
+ROLLUP_MAG_REL_TOL = 0.10  # per-unit magnitude must be within 10% of the cluster's running mean
+ROLLUP_MAG_ABS_FLOOR = 10.0  # ...or within $10, whichever is looser (guards tiny denominators)
+ROLLUP_PCT_ABS_TOL = 4.0  # and pct_change within 4 percentage points of the cluster's mean
+
+
 def _add_months(d: date, n: int) -> date:
     total = (d.year * 12 + d.month - 1) + n
     return date(total // 12, total % 12 + 1, 1)
@@ -525,6 +536,97 @@ def _unit_expense_spikes(db: Session, pid: str, name: str, month: date, t: Thres
     return out
 
 
+def _make_rollup_item(cluster: list[dict], kind: str) -> dict:
+    """Collapse a tight cluster of unit-level items (same property/month/type) into one
+    summary item. Uses the cluster TOTAL as the ranking ``magnitude`` (the real aggregate
+    dollar impact on the property), and the per-unit AVERAGE in the label/detail (what
+    the analyst actually sees repeated across units)."""
+    n = len(cluster)
+    first = cluster[0]
+    total_mag = sum(it["magnitude"] for it in cluster)
+    avg_mag = total_mag / n
+    pct_vals = [it["pct_change"] for it in cluster if it.get("pct_change") is not None]
+    avg_pct = sum(pct_vals) / len(pct_vals) if pct_vals else None
+    unit_numbers = [it["unit_number"] for it in cluster if it.get("unit_number")]
+    shown = sorted(unit_numbers, key=lambda u: (len(u), u))[:12]
+
+    pct_txt = f" ({avg_pct:.0f}%)" if avg_pct is not None else ""
+    if kind == "noi_drop":
+        label = f"{n} units NOI fell ~{_money(avg_mag)}{pct_txt} vs prior month"
+    elif kind == "vacancy":
+        label = f"{n} units went vacant, lost ~{_money(avg_mag)} each (total {_money(total_mag)})"
+    elif kind == "expense_spike":
+        label = f"{n} units' operating expenses up ~{_money(avg_mag)}{pct_txt} vs 3-mo avg"
+    else:
+        label = f"{n} units affected, ~{_money(avg_mag)} each"
+
+    return {
+        "type": kind,
+        "property_id": first["property_id"],
+        "property_name": first["property_name"],
+        "unit_id": None,
+        "unit_number": None,
+        "category": first.get("category"),
+        "magnitude": total_mag,
+        "current": None,
+        "prior": None,
+        "change": None,
+        "pct_change": avg_pct,
+        "detail": {
+            "rolled_up": True,
+            "count": n,
+            "avg_magnitude": avg_mag,
+            "total_magnitude": total_mag,
+            "unit_numbers": shown,
+            "unit_numbers_more": max(len(unit_numbers) - len(shown), 0),
+        },
+        "label": label,
+        "rolled_up": True,
+        "count": n,
+    }
+
+
+def _cluster_and_rollup(entries: list[dict], kind: str) -> list[dict]:
+    """Group unit-level entries (already scoped to one property+month+type) into runs of
+    tightly-clustered magnitude/pct_change, and roll up any run bigger than
+    ``ROLLUP_MIN_COUNT`` into a single summary item. Conservative by design: entries that
+    don't fit a tight cluster (the true outliers) are always left as individual items,
+    even alongside a rolled-up group in the same month.
+    """
+    if len(entries) <= ROLLUP_MIN_COUNT:
+        return entries
+
+    ordered = sorted(entries, key=lambda it: it["magnitude"])
+    clusters: list[list[dict]] = []
+    current: list[dict] = []
+    for it in ordered:
+        if not current:
+            current = [it]
+            continue
+        ref_mag = sum(x["magnitude"] for x in current) / len(current)
+        mag_ok = abs(it["magnitude"] - ref_mag) <= max(ROLLUP_MAG_REL_TOL * ref_mag, ROLLUP_MAG_ABS_FLOOR)
+        pct_ok = True
+        cur_pct_vals = [x["pct_change"] for x in current if x.get("pct_change") is not None]
+        if it.get("pct_change") is not None and cur_pct_vals:
+            ref_pct = sum(cur_pct_vals) / len(cur_pct_vals)
+            pct_ok = abs(it["pct_change"] - ref_pct) <= ROLLUP_PCT_ABS_TOL
+        if mag_ok and pct_ok:
+            current.append(it)
+        else:
+            clusters.append(current)
+            current = [it]
+    if current:
+        clusters.append(current)
+
+    out: list[dict] = []
+    for cluster in clusters:
+        if len(cluster) > ROLLUP_MIN_COUNT:
+            out.append(_make_rollup_item(cluster, kind))
+        else:
+            out.extend(cluster)
+    return out
+
+
 def property_attention(
     db: Session,
     property_id: str,
@@ -557,11 +659,16 @@ def property_attention(
     items = []
     where, params = "property_id = :id", {"id": property_id}
     for month in _distinct_months(db, "property_month_summary", where, params, date_from, date_to):
+        # Unit-grain detectors roll up when a building-wide event (e.g. one rent cut
+        # applied identically across a property) would otherwise emit one near-duplicate
+        # item per unit; true per-unit outliers are left individual. See
+        # _cluster_and_rollup. Property/tier-level category spikes have no per-unit
+        # duplication problem, so they're never rolled up.
         batch = (
             _expense_spikes(db, month, t, property_id=property_id)  # property/tier category spikes
-            + _unit_noi_drops(db, property_id, name, month, t)
-            + _unit_vacancies(db, property_id, name, month)
-            + _unit_expense_spikes(db, property_id, name, month, t)
+            + _cluster_and_rollup(_unit_noi_drops(db, property_id, name, month, t), "noi_drop")
+            + _cluster_and_rollup(_unit_vacancies(db, property_id, name, month), "vacancy")
+            + _cluster_and_rollup(_unit_expense_spikes(db, property_id, name, month, t), "expense_spike")
         )
         for it in batch:
             it["month"] = month

@@ -51,6 +51,22 @@ class PeriodStatusUpsert(BaseModel):
     status: str = Field(pattern=_STATUS_PATTERN)
 
 
+# ---- Audit log (read-only; rows are written by admin actions such as unlock) ----
+class AuditLogOut(BaseModel):
+    id: str
+    user_id: str | None = None
+    user_email: str | None = None  # resolved for display; None if the user was deleted
+    action: str
+    entity: str
+    entity_id: str | None = None
+    before: dict | None = None
+    after: dict | None = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # ---- Properties (CRUD) ----
 class PropertyCreate(BaseModel):
     name: str = Field(min_length=1)
@@ -346,6 +362,11 @@ class AttentionItem(BaseModel):
     pct_change: float | None = None
     detail: dict = {}
     label: str
+    # Set when this item is a roll-up of many near-identical unit-level items (same
+    # property/month/type, tightly-clustered magnitude) into one summary line; see
+    # attention._cluster_and_rollup. count is the number of underlying units collapsed.
+    rolled_up: bool = False
+    count: int | None = None
 
 
 class AttentionFeed(BaseModel):

@@ -1,5 +1,6 @@
 import { Fragment, useState } from "react";
 import type { PnLMetrics, PortfolioBreakdown, PropertyBreakdown } from "../api";
+import { clickableProps } from "../hooks/clickable";
 import { fmtCurrency } from "../ui";
 
 const cells = (m: PnLMetrics) => [m.gross_rent, m.operating_expenses, m.noi, m.below_noi, m.cash_flow];
@@ -57,11 +58,11 @@ function PropertyRows({ p, open, onToggle }: { p: PropertyBreakdown; open: boole
   return (
     <Fragment>
       <tr
-        onClick={() => multi && onToggle()}
+        {...clickableProps(multi ? onToggle : undefined)}
         className={`row-strong${multi ? " is-clickable" : ""}${open ? " row-open" : ""}`}
       >
         <td>
-          {multi && <span className="caret">{open ? "▾" : "▸"}</span>}
+          {multi && <span className="caret" aria-hidden="true">{open ? "▾" : "▸"}</span>}
           {p.property_name}
           <span className="muted" style={{ fontWeight: 400 }}> ({p.type})</span>
         </td>

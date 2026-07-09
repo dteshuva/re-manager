@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { login } from "./api";
+import { login, setUnauthorizedHandler } from "./api";
 import Dashboard from "./views/Dashboard";
 import Entry from "./views/Entry";
 import ImportView from "./views/Import";
@@ -44,6 +44,14 @@ export default function App() {
     }).then((r) => { if (!r.ok) handleLogout(); });
   }, []);
 
+  // Central 401 handling: if the token expires mid-session (a tab left open past expiry),
+  // route the user back to login instead of leaving every view to show its own generic
+  // error banner. Registered once; the api module calls this on any 401 response.
+  useEffect(() => {
+    setUnauthorizedHandler(() => handleLogout());
+    return () => setUnauthorizedHandler(null);
+  }, []);
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -83,20 +91,27 @@ export default function App() {
           </p>
 
           <form onSubmit={handleLogin} className="auth__form">
-            <div className="auth__field">
-              <label>Email</label>
-              <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
-            </div>
-            <div className="auth__field">
-              <label>Password</label>
+            <label className="auth__field">
+              <span>Email</span>
               <input
                 className="input"
+                id="login-email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com"
+              />
+            </label>
+            <label className="auth__field">
+              <span>Password</span>
+              <input
+                className="input"
+                id="login-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
               />
-            </div>
+            </label>
             <button className="btn btn-primary" type="submit" style={{ justifyContent: "center", marginTop: 4 }}>
               Sign in
             </button>
@@ -129,8 +144,9 @@ export default function App() {
               key={t.id}
               className={`nav-item${t.id === tab ? " is-active" : ""}`}
               onClick={() => setTab(t.id)}
+              aria-current={t.id === tab ? "page" : undefined}
             >
-              <span className="nav-item__icon">{t.icon}</span>
+              <span className="nav-item__icon" aria-hidden="true">{t.icon}</span>
               {t.label}
             </button>
           ))}
@@ -142,7 +158,7 @@ export default function App() {
             <span className="sidebar__user-name">{userEmail}</span>
           </div>
           <button className="nav-item" onClick={handleLogout}>
-            <span className="nav-item__icon">⏻</span>
+            <span className="nav-item__icon" aria-hidden="true">⏻</span>
             Log out
           </button>
         </div>
@@ -151,7 +167,7 @@ export default function App() {
       <div className="main">
         <header className="topbar">
           <div>
-            <div className="topbar__title">{active.title}</div>
+            <h1 className="topbar__title">{active.title}</h1>
             <div className="topbar__sub">{active.sub}</div>
           </div>
         </header>

@@ -25,7 +25,7 @@ import BreakdownTable from "../components/BreakdownTable";
 import KpiBand from "../components/KpiBand";
 import PeriodSelector from "../components/PeriodSelector";
 import PnlTrendChart from "../components/PnlTrendChart";
-import { card, CHART, fmtCurrency, fmtMonth } from "../ui";
+import { card, CHART, fmtCurrency, fmtMonth, isYoyComparison } from "../ui";
 
 // Portfolio dashboard: period selector + summary cards + monthly table + trend charts
 // for NOI and cash flow. All figures come straight from the computed P&L views; the
@@ -41,27 +41,38 @@ export default function Dashboard({ token }: { token: string }) {
 
   // One initial load (no range) to discover which months have data.
   useEffect(() => {
+    let cancelled = false;
     getPortfolioMonthly(token)
       .then((r) => {
+        if (cancelled) return;
         setAllMonths(r.map((x) => x.month));
         setError(null);
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   // One period selector drives everything: KPI band + sparklines (period vs prior period),
   // the attention feed (anchored at the period's last month), and the detail sections below.
   // A fresh load clears any stale error: the four requests run in parallel, so a single
   // transient network blip must not leave the banner stuck once the reload succeeds.
+  // `cancelled` guards against a slow, superseded request overwriting fresher state if the
+  // user changes the period again before this one resolves.
   useEffect(() => {
+    let cancelled = false;
     Promise.all([
-      getPortfolioDashboard(token, range).then(setDashboard),
-      getAttentionFeed(token, range).then(setFeed),
-      getPortfolioMonthly(token, range).then(setRows),
-      getPortfolioBreakdown(token, range).then(setBreakdown),
+      getPortfolioDashboard(token, range).then((d) => !cancelled && setDashboard(d)),
+      getAttentionFeed(token, range).then((f) => !cancelled && setFeed(f)),
+      getPortfolioMonthly(token, range).then((r) => !cancelled && setRows(r)),
+      getPortfolioBreakdown(token, range).then((b) => !cancelled && setBreakdown(b)),
     ])
-      .then(() => setError(null))
-      .catch((e) => setError(e.message));
+      .then(() => !cancelled && setError(null))
+      .catch((e) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
   }, [token, range.from, range.to]);
 
   const chartData = useMemo(
@@ -81,6 +92,9 @@ export default function Dashboard({ token }: { token: string }) {
           {dashboard?.prior_from && (
             <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>
               {" "}vs {periodLabel({ period_from: dashboard.prior_from, period_to: dashboard.prior_to })}
+              {isYoyComparison(dashboard.period_from, dashboard.period_to, dashboard.prior_from, dashboard.prior_to) && (
+                <strong style={{ color: "var(--accent)", fontWeight: 650 }}> · year-over-year</strong>
+              )}
             </span>
           )}
         </h3>
@@ -95,8 +109,6 @@ export default function Dashboard({ token }: { token: string }) {
         dollar impact — biggest first. Each is tagged with its month and links to the property causing it.
       </p>
       {feed && <AttentionFeed feed={feed} />}
-
-      <h3 className="section-title">Detail</h3>
 
       {breakdown && breakdown.properties.length > 0 && (
         <>
@@ -116,7 +128,11 @@ export default function Dashboard({ token }: { token: string }) {
           <PnlTrendChart data={rows} />
 
           <h3 className="section-title">Rent vs Operating Expenses</h3>
-          <div style={{ ...card, height: 280, padding: "18px 16px 8px" }}>
+          <div
+            style={{ ...card, height: 280, padding: "18px 16px 8px" }}
+            role="img"
+            aria-label={`Rent and operating expenses by month, ${chartData.length} month${chartData.length === 1 ? "" : "s"}. See the monthly detail table below for exact figures.`}
+          >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />

@@ -21,7 +21,8 @@ import KpiBand from "../components/KpiBand";
 import PeriodSelector from "../components/PeriodSelector";
 import PnlTrendChart from "../components/PnlTrendChart";
 import UnitDetail from "../components/UnitDetail";
-import { fmtCurrency, fmtMonth } from "../ui";
+import { clickableProps } from "../hooks/clickable";
+import { fmtCurrency, fmtMonth, isYoyComparison } from "../ui";
 
 const ROSTER_PAGE = 25;
 
@@ -57,32 +58,47 @@ export default function PropertyDetail({ token }: { token: string }) {
   };
 
   useEffect(() => {
+    let cancelled = false;
     listProperties(token)
       .then((ps) => {
+        if (cancelled) return;
         setProperties(ps);
         setPropertyId((cur) => cur || (ps[0]?.id ?? ""));
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   // Discover the property's months; reset per-property view state.
   useEffect(() => {
     if (!propertyId) return;
+    let cancelled = false;
     setOffset(0);
     setSelectedUnit(null);
     getPropertyMonthly(token, propertyId)
-      .then((r) => setAllMonths(r.map((x) => x.month)))
-      .catch((e) => setError(e.message));
+      .then((r) => !cancelled && setAllMonths(r.map((x) => x.month)))
+      .catch((e) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
   }, [token, propertyId]);
 
   // Reset the roster page when the anchor month changes.
   useEffect(() => setOffset(0), [range.to]);
 
   // Scoped KPI band (over the period) + property-scoped feed (at the period's end month).
+  // `cancelled` guards against a slow, superseded request overwriting fresher state if the
+  // user switches property/period again before this one resolves.
   useEffect(() => {
     if (!propertyId) return;
-    getPropertyDashboard(token, propertyId, range).then(setDashboard).catch((e) => setError(e.message));
-    getPropertyAttention(token, propertyId, range).then(setFeed).catch((e) => setError(e.message));
+    let cancelled = false;
+    getPropertyDashboard(token, propertyId, range).then((d) => !cancelled && setDashboard(d)).catch((e) => !cancelled && setError(e.message));
+    getPropertyAttention(token, propertyId, range).then((f) => !cancelled && setFeed(f)).catch((e) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
   }, [token, propertyId, range.from, range.to]);
 
   // Unit roster (server-sorted/paginated) at the period's end month — multifamily only.
@@ -91,21 +107,29 @@ export default function PropertyDetail({ token }: { token: string }) {
       setRoster(null);
       return;
     }
+    let cancelled = false;
     getUnitRoster(token, propertyId, { month: range.to, sort, order, limit: ROSTER_PAGE, offset })
-      .then(setRoster)
-      .catch((e) => setError(e.message));
+      .then((r) => !cancelled && setRoster(r))
+      .catch((e) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
   }, [token, propertyId, isMulti, range.to, sort, order, offset]);
 
   // Lower detail: month-by-month P&L over the selected range.
   useEffect(() => {
     if (!propertyId) return;
+    let cancelled = false;
     setOpenMonth(null);
-    getPropertyMonthly(token, propertyId, range).then(setMonthly).catch((e) => setError(e.message));
+    getPropertyMonthly(token, propertyId, range).then((r) => !cancelled && setMonthly(r)).catch((e) => !cancelled && setError(e.message));
     if (isMulti) {
-      getPropertyUnitsMonthly(token, propertyId, range).then(setUnitRows).catch((e) => setError(e.message));
+      getPropertyUnitsMonthly(token, propertyId, range).then((r) => !cancelled && setUnitRows(r)).catch((e) => !cancelled && setError(e.message));
     } else {
       setUnitRows([]);
     }
+    return () => {
+      cancelled = true;
+    };
   }, [token, propertyId, range.from, range.to, isMulti]);
 
   const unitsByMonth = useMemo(() => {
@@ -149,6 +173,10 @@ export default function PropertyDetail({ token }: { token: string }) {
           {dashboard.current ? ` · ${dashboard.current.total_units || 0} units` : ""}
           {dashboard.period_from ? ` · ${periodLabel(dashboard)}` : ""}
           {dashboard.prior_from ? ` vs ${periodLabel({ period_from: dashboard.prior_from, period_to: dashboard.prior_to })}` : ""}
+          {dashboard.prior_from &&
+            isYoyComparison(dashboard.period_from, dashboard.period_to, dashboard.prior_from, dashboard.prior_to) && (
+              <strong style={{ color: "var(--accent)", fontWeight: 650 }}> · year-over-year</strong>
+            )}
         </p>
       )}
 
@@ -184,7 +212,7 @@ export default function PropertyDetail({ token }: { token: string }) {
             </thead>
             <tbody>
               {roster.rows.map((u) => (
-                <tr key={u.unit_id} className="is-clickable" onClick={() => openUnit(u.unit_id)}>
+                <tr key={u.unit_id} className="is-clickable" {...clickableProps(() => openUnit(u.unit_id))}>
                   <td>
                     Unit {u.unit_number}
                     {u.label ? ` — ${u.label}` : ""}
@@ -255,11 +283,11 @@ export default function PropertyDetail({ token }: { token: string }) {
             return (
               <Fragment key={m.month}>
                 <tr
-                  onClick={() => isMulti && setOpenMonth(isOpen ? null : m.month)}
+                  {...clickableProps(isMulti ? () => setOpenMonth(isOpen ? null : m.month) : undefined)}
                   className={`${isMulti ? "row-strong is-clickable" : ""}${isOpen ? " row-open" : ""}`}
                 >
                   <td>
-                    {isMulti && <span className="caret">{isOpen ? "▾" : "▸"}</span>}
+                    {isMulti && <span className="caret" aria-hidden="true">{isOpen ? "▾" : "▸"}</span>}
                     {fmtMonth(m.month)}
                   </td>
                   <Cells m={m} />

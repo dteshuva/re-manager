@@ -1,4 +1,5 @@
 import type { AttentionFeed as Feed, AttentionItem, AttentionType } from "../api";
+import { clickableProps } from "../hooks/clickable";
 import { fmtCurrency, fmtMonth } from "../ui";
 
 // The heart of the portfolio dashboard: a ranked list of exceptions for the selected
@@ -38,12 +39,21 @@ export default function AttentionFeed({
           <li
             key={`${it.type}-${it.property_id}-${it.unit_id ?? ""}-${it.month ?? i}`}
             className={`feed-item${onDrill ? " is-clickable" : ""}`}
-            onClick={onDrill ? () => onDrill(it) : undefined}
+            {...clickableProps(onDrill ? () => onDrill(it) : undefined)}
           >
             <span className={`feed-chip ${meta.cls}`}>{meta.label}</span>
             <div className="feed-item__body">
               <div className="feed-item__title">
                 {it.unit_number ? `Unit ${it.unit_number}` : it.property_name}
+                {it.rolled_up && it.count != null && (
+                  <span
+                    className="feed-chip feed-chip--missing"
+                    style={{ marginLeft: 6 }}
+                    title={`${it.count} units rolled up — magnitude and % were tightly clustered`}
+                  >
+                    {it.count} units
+                  </span>
+                )}
                 {multiMonth && it.month && <span className="feed-item__month">{fmtMonth(it.month)}</span>}
               </div>
               <div className="feed-item__label">{it.label}</div>
@@ -54,7 +64,7 @@ export default function AttentionFeed({
               </span>
               <strong>{fmtCurrency(it.magnitude)}</strong>
             </div>
-            {onDrill && <span className="feed-item__chevron">›</span>}
+            {onDrill && <span className="feed-item__chevron" aria-hidden="true">›</span>}
           </li>
         );
       })}
