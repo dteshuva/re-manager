@@ -10,6 +10,7 @@ const TYPE_META: Record<AttentionType, { label: string; cls: string }> = {
   noi_drop: { label: "NOI Drop", cls: "feed-chip--noi" },
   expense_spike: { label: "Expense Spike", cls: "feed-chip--spike" },
   vacancy: { label: "Vacancy", cls: "feed-chip--vacancy" },
+  occupancy_drop: { label: "Occupancy Drop", cls: "feed-chip--vacancy" },
   high_vacancy: { label: "High Vacancy", cls: "feed-chip--vacancy" },
   missing_data: { label: "Missing Data", cls: "feed-chip--missing" },
 };

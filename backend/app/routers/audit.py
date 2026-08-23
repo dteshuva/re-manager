@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import require_admin
+from app.deps import Scope, require_admin_scope
 from app.models import AuditLog, User
 from app.schemas import AuditLogOut
 
@@ -25,10 +25,14 @@ def list_audit_log(
     offset: int = Query(default=0, ge=0),
     entity: str | None = None,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    scope: Scope = Depends(require_admin_scope),
 ):
     """Most-recent-first audit rows (who/when/action/entity/before/after). Admin only."""
-    stmt = select(AuditLog, User.email).outerjoin(User, User.id == AuditLog.user_id)
+    stmt = (
+        select(AuditLog, User.email)
+        .outerjoin(User, User.id == AuditLog.user_id)
+        .where(AuditLog.account_id == scope.account_id)
+    )
     if entity:
         stmt = stmt.where(AuditLog.entity == entity)
     stmt = stmt.order_by(AuditLog.created_at.desc()).limit(limit).offset(offset)

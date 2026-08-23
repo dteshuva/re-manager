@@ -1,9 +1,10 @@
 # Real Estate Portfolio Management
 
-A web app for real estate operators to track the **actual** monthly financial performance of a
-rental portfolio — rent, expenses, NOI, and cash flow — at three levels: **unit → property →
-portfolio**. It replaces the spreadsheet sprawl most small landlords live in with a single
-system that computes the P&L, flags what needs attention, and reports investment returns.
+A multi-tenant web app for real estate operators to run a rental portfolio off one set of
+numbers — **actual** monthly P&L, rent roll, budgets and statutory compliance — at three
+levels: **unit → property → portfolio**. It replaces the spreadsheet sprawl most small
+landlords live in with a single system that computes the P&L, flags what needs attention,
+and reports investment returns.
 
 <!-- Live demo: https://... (coming soon) -->
 
@@ -17,7 +18,7 @@ property is bleeding cash this month, and why?" As the portfolio grows, that doe
 and the numbers quietly drift out of sync.
 
 This app makes the monthly numbers **computed, consistent, and honest**: you record line items,
-and everything else — NOI, cash flow, rollups, return metrics — is derived from them.
+and everything else — NOI, cash flow, rollups, variance, return metrics — is derived from them.
 
 ## Features
 
@@ -29,10 +30,19 @@ and everything else — NOI, cash flow, rollups, return metrics — is derived f
   changed: NOI drops, expense spikes, vacancies, and missing data, biggest dollar impact first.
 - **Data in three ways.** Manual entry, CSV/Excel bulk import, or **automatic PDF statement
   extraction that runs entirely on-device** — no data leaves the machine and no paid API is used.
+- **Rent roll and leases.** Full tenancy history per unit — term, contract rent, escalations,
+  security deposits, concessions, percentage rent for retail — plus lease-expiration horizons
+  for rollover risk and a **rent waterfall** bridging market rent to cash actually collected.
+- **Budget vs. actual.** A flat annual plan per property, with variance against actuals at
+  property and portfolio level.
+- **Compliance tracking.** Statutory certificates (EICR, Gas/CP12, EPC, HMO and selective
+  licences, PAT, Legionella, fire risk) with expiry status and a dashboard alert window.
 - **Investment returns.** Enter a property's acquisition cost and get cap rate, cash-on-cash, and
   DSCR, plus value-weighted portfolio aggregates.
 - **Instant reclassification.** Move a category between accounting buckets (e.g. capex →
   operating) and watch NOI and cash flow recompute live — no data migration.
+- **Slice and export.** Tag properties and filter any report by tag, save the views you use, and
+  export the P&L or variance to Excel/CSV as real numbers, not formatted strings.
 
 ## Engineering highlights
 
@@ -47,6 +57,19 @@ The parts I'm most happy with — where a design decision does real work:
   default)`). So reclassifying a whole category — moving "roof replacement" from capex to
   operating — is a single `UPDATE` that instantly recomputes NOI across all history. No
   migration, no touched data.
+
+- **A hard line between reference data and the math.** Leases, market rents, budgets and shell
+  flags are *reference* data: they inform reporting but **never** feed NOI or cash flow, which
+  stay driven solely by recorded line items. That invariant is what lets the rent roll and the
+  waterfall be rich and opinionated without any risk of contaminating the financials.
+
+- **Tenant isolation with one choke point.** Rather than trusting every query to remember its
+  `account_id`, ownership is resolved through a single module of scoped resolvers, backed by
+  composite foreign keys so the database rejects a cross-account reference the app might miss.
+  Not-yours returns **404, never 403** — a 403 would confirm the id exists and leak the shape of
+  another account's portfolio. Categories are a per-account copy rather than a shared list,
+  precisely *because* reclassification recomputes financials: one tenant must never be able to
+  move another's NOI.
 
 - **Rollups that don't lie.** Rent and operating costs aggregate cleanly up the hierarchy, but
   shared property-level costs (debt service, a new roof) are *never* silently allocated across
@@ -67,11 +90,23 @@ The parts I'm most happy with — where a design decision does real work:
 - **Metrics that refuse to mislead.** Return metrics only appear when they can be computed
   honestly — cash-on-cash needs a full 12 months (a lumpy partial year is never annualized into a
   fake return), DSCR needs recorded debt service. Portfolio figures are value-weighted (Σ NOI ÷ Σ
-  price), not a naïve average of percentages.
+  price), not a naïve average of percentages. The rent waterfall reconciles exactly to the
+  unit-tier P&L, and splits its collections gap into *concessions* (a leasing decision) and *bad
+  debt* (delinquency) rather than lumping them together.
+
+- **Status derived from the calendar, not a nightly job.** A certificate is expired, expiring or
+  valid as a function of its expiry date and today — computed on read, so it can never be stale
+  and there's no scheduled task to fail silently.
 
 - **Fast at scale via a summary layer.** The dashboard and metrics read pre-aggregated monthly
   rollups (refreshed on post/lock), not raw line items at request time — so the attention feed
   stays quick across thousands of units. Line items remain the single source of truth.
+
+- **Verification that drives the real API.** A phased suite asserts against a hand-computed demo
+  fixture — including planted anomalies with known magnitudes — on a throwaway database built
+  fresh from migrations. Isolation gets its own adversarial pass: it signs up two accounts, gives
+  one a portfolio, then probes every listing, by-id and write endpoint as the other and asserts
+  it sees nothing.
 
 ## Tech stack
 
@@ -81,6 +116,7 @@ The parts I'm most happy with — where a design decision does real work:
 | Database    | Postgres (Supabase-compatible), P&L computed in SQL views          |
 | Frontend    | React + Vite + TypeScript, Recharts for trends                    |
 | PDF import  | pdfplumber + optional local Ollama LLM — no paid API              |
+| Export      | openpyxl (Excel) + stdlib csv                                      |
 
 ## Architecture
 
@@ -92,12 +128,17 @@ line_items ──► v_line_item_resolved ──► v_monthly_pnl ──► v_po
       │
       └──► property / unit / portfolio_month_summary   (pre-aggregated, refreshed on post/lock)
                      │
-                     └──► attention feed  +  investment metrics
+                     ├──► attention feed  +  investment metrics
+                     └──► budget variance  +  rent waterfall
+                                    ▲
+      lease / market rent / budgets ─┘   (reference data — never feeds NOI or cash flow)
 ```
 
-**Core tables:** `users`, `properties`, `units`, `categories` (a shared global list),
-`monthly_records`, `line_items`, `period_status` (the workflow), `audit_log`. **Plus**
-per-account `attention_settings` and per-property `property_investment` inputs. The interactive
-API reference (FastAPI / Swagger) is served at `/docs`.
+Every table hangs off an **account**; ownership is resolved through one scoped-lookup module and
+enforced underneath by composite foreign keys.
 
-
+**Core tables:** `accounts`, `users`, `properties`, `units`, `lease`, `categories` (per-account),
+`monthly_records`, `line_items`, `period_status` (the workflow), `audit_log`. **Plus** the
+reference/config tier: `property_investment`, `property_budget`, `property_tag`,
+`property_certificate`, and per-account `attention_settings`. The interactive API reference
+(FastAPI / Swagger) is served at `/docs`.

@@ -14,9 +14,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import get_current_user
+from app.deps import Scope, get_scope
 from app.locks import assert_unlocked
-from app.models import Category, LineItem, MonthlyRecord, Property, Unit, User
+from app.models import Category, LineItem, MonthlyRecord, PeriodStatus, Unit
+from app.scoping import get_property_or_404, get_record_or_404
 from app.summaries import refresh_month
 from app.schemas import (
     LineItemCreate,
@@ -50,6 +51,7 @@ def _record_out(rec: MonthlyRecord) -> MonthlyRecordOut:
         unit_id=rec.unit_id,
         month=rec.month,
         notes=rec.notes,
+        is_vacant=rec.is_vacant,
         line_items=[_li_out(li) for li in items],
     )
 
@@ -59,16 +61,10 @@ def _first_of_month(d: date) -> date:
     return d.replace(day=1)
 
 
-def _get_record_or_404(db: Session, record_id: str) -> MonthlyRecord:
-    rec = db.get(MonthlyRecord, record_id)
-    if rec is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Monthly record not found")
-    return rec
-
-
-def _validate_scope(db: Session, property_id: str, unit_id: str | None) -> None:
-    if db.get(Property, property_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Property not found")
+def _validate_scope(db: Session, scope: Scope, property_id: str, unit_id: str | None) -> None:
+    # 404s on another account's property (get_property_or_404's contract), so the unit
+    # check below can only ever see units of a property this account owns.
+    get_property_or_404(db, scope, property_id)
     if unit_id is not None:
         unit = db.get(Unit, unit_id)
         if unit is None or unit.property_id != property_id:
@@ -78,7 +74,22 @@ def _validate_scope(db: Session, property_id: str, unit_id: str | None) -> None:
             )
 
 
-def _validate_categories(db: Session, items: list[LineItemCreate]) -> None:
+def _ensure_draft_period(db: Session, property_id: str, month: date) -> None:
+    """A brand-new record should start life as ``draft`` rather than with no period-status
+    row at all — otherwise ``GET /periods?property_id=&month=`` returns ``[]`` right after a
+    ``POST /records`` and the Entry screen's status badge has nothing to show (analyst gap).
+    Only inserts when no row exists yet; never downgrades an existing posted/locked status.
+    """
+    exists = db.scalar(
+        select(PeriodStatus.id).where(
+            PeriodStatus.property_id == property_id, PeriodStatus.month == month
+        )
+    )
+    if exists is None:
+        db.add(PeriodStatus(property_id=property_id, month=month, status="draft"))
+
+
+def _validate_categories(db: Session, scope: Scope, items: list[LineItemCreate]) -> None:
     ids = [i.category_id for i in items]
     if len(set(ids)) != len(ids):
         raise HTTPException(
@@ -86,7 +97,16 @@ def _validate_categories(db: Session, items: list[LineItemCreate]) -> None:
             detail="Duplicate category in line items; one row per category per record.",
         )
     if ids:
-        found = set(db.scalars(select(Category.id).where(Category.id.in_(ids))).all())
+        # Scoped to this account: another account's category id reads as unknown, not as a
+        # usable reference. The composite FK from migration 0017 would reject it at flush
+        # anyway — this turns that 500-shaped IntegrityError into a clean 400.
+        found = set(
+            db.scalars(
+                select(Category.id).where(
+                    Category.id.in_(ids), Category.account_id == scope.account_id
+                )
+            ).all()
+        )
         missing = set(ids) - found
         if missing:
             raise HTTPException(
@@ -101,10 +121,10 @@ def list_records(
     unit_id: str | None = None,
     month: date | None = None,
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
     """List monthly records, optionally filtered by property / unit / month."""
-    stmt = select(MonthlyRecord)
+    stmt = select(MonthlyRecord).where(MonthlyRecord.account_id == scope.account_id)
     if property_id:
         stmt = stmt.where(MonthlyRecord.property_id == property_id)
     if unit_id:
@@ -117,16 +137,16 @@ def list_records(
 
 @router.get("/records/{record_id}", response_model=MonthlyRecordOut)
 def get_record(
-    record_id: str, db: Session = Depends(get_db), _u: User = Depends(get_current_user)
+    record_id: str, db: Session = Depends(get_db), scope: Scope = Depends(get_scope)
 ):
-    return _record_out(_get_record_or_404(db, record_id))
+    return _record_out(get_record_or_404(db, scope, record_id))
 
 
 @router.post("/records", response_model=MonthlyRecordOut, status_code=status.HTTP_201_CREATED)
 def upsert_record(
     payload: MonthlyRecordCreate,
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
     """Create or replace a property/unit month and its line items (idempotent).
 
@@ -134,12 +154,14 @@ def upsert_record(
     line items instead of duplicating. Blocked if the property-month is locked.
     """
     month = _first_of_month(payload.month)
-    _validate_scope(db, payload.property_id, payload.unit_id)
-    _validate_categories(db, payload.line_items)
+    _validate_scope(db, scope, payload.property_id, payload.unit_id)
+    _validate_categories(db, scope, payload.line_items)
     assert_unlocked(db, payload.property_id, month)
+    _ensure_draft_period(db, payload.property_id, month)
 
     rec = db.scalar(
         select(MonthlyRecord).where(
+            MonthlyRecord.account_id == scope.account_id,
             MonthlyRecord.property_id == payload.property_id,
             MonthlyRecord.unit_id.is_(None)
             if payload.unit_id is None
@@ -149,16 +171,21 @@ def upsert_record(
     )
     if rec is None:
         rec = MonthlyRecord(
-            property_id=payload.property_id, unit_id=payload.unit_id, month=month
+            account_id=scope.account_id,
+            property_id=payload.property_id,
+            unit_id=payload.unit_id,
+            month=month,
         )
         db.add(rec)
     rec.notes = payload.notes
+    rec.is_vacant = payload.is_vacant
     # Replace line items wholesale (the form sends the complete set for this record).
     rec.line_items.clear()
     db.flush()
     for item in payload.line_items:
         rec.line_items.append(
             LineItem(
+                account_id=scope.account_id,
                 category_id=item.category_id,
                 classification=item.classification,
                 amount=item.amount,
@@ -176,13 +203,17 @@ def update_record(
     record_id: str,
     payload: MonthlyRecordUpdate,
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
-    """Update record-level fields (notes). Line items are managed separately."""
-    rec = _get_record_or_404(db, record_id)
+    """Update record-level fields (notes, is_vacant). Line items are managed separately."""
+    rec = get_record_or_404(db, scope, record_id)
     assert_unlocked(db, rec.property_id, rec.month)
     if payload.notes is not None:
         rec.notes = payload.notes
+    if payload.is_vacant is not None:
+        rec.is_vacant = payload.is_vacant
+        db.flush()
+        refresh_month(db, rec.property_id, rec.month)
     db.commit()
     db.refresh(rec)
     return _record_out(rec)
@@ -190,9 +221,9 @@ def update_record(
 
 @router.delete("/records/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_record(
-    record_id: str, db: Session = Depends(get_db), _u: User = Depends(get_current_user)
+    record_id: str, db: Session = Depends(get_db), scope: Scope = Depends(get_scope)
 ):
-    rec = _get_record_or_404(db, record_id)
+    rec = get_record_or_404(db, scope, record_id)
     assert_unlocked(db, rec.property_id, rec.month)
     property_id, month = rec.property_id, rec.month
     db.delete(rec)
@@ -211,21 +242,26 @@ def add_line_item(
     record_id: str,
     payload: LineItemCreate,
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
     """Add or update a single line item on a record (upsert by category)."""
-    rec = _get_record_or_404(db, record_id)
+    rec = get_record_or_404(db, scope, record_id)
     assert_unlocked(db, rec.property_id, rec.month)
-    _validate_categories(db, [payload])
+    _validate_categories(db, scope, [payload])
 
     li = db.scalar(
         select(LineItem).where(
+            LineItem.account_id == scope.account_id,
             LineItem.monthly_record_id == record_id,
             LineItem.category_id == payload.category_id,
         )
     )
     if li is None:
-        li = LineItem(monthly_record_id=record_id, category_id=payload.category_id)
+        li = LineItem(
+            account_id=scope.account_id,
+            monthly_record_id=record_id,
+            category_id=payload.category_id,
+        )
         db.add(li)
     li.classification = payload.classification
     li.amount = payload.amount
@@ -241,9 +277,13 @@ def update_line_item(
     line_item_id: str,
     payload: LineItemUpdate,
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
-    li = db.get(LineItem, line_item_id)
+    li = db.scalar(
+        select(LineItem).where(
+            LineItem.id == line_item_id, LineItem.account_id == scope.account_id
+        )
+    )
     if li is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Line item not found")
     rec = li.monthly_record
@@ -262,9 +302,13 @@ def update_line_item(
 
 @router.delete("/line-items/{line_item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_line_item(
-    line_item_id: str, db: Session = Depends(get_db), _u: User = Depends(get_current_user)
+    line_item_id: str, db: Session = Depends(get_db), scope: Scope = Depends(get_scope)
 ):
-    li = db.get(LineItem, line_item_id)
+    li = db.scalar(
+        select(LineItem).where(
+            LineItem.id == line_item_id, LineItem.account_id == scope.account_id
+        )
+    )
     if li is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Line item not found")
     rec = li.monthly_record

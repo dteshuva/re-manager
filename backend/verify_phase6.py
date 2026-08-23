@@ -37,7 +37,7 @@ assert len(items) == 4, f"expected exactly 4 items, got {len(items)}"
 assert set(by_tp) == {
     ("noi_drop", "Oak Ridge Residences"),
     ("expense_spike", "Cedar Commons"),
-    ("vacancy", "Maple Court Apartments"),
+    ("occupancy_drop", "Maple Court Apartments"),
     ("missing_data", "Ash Grove Apartments"),
 }
 
@@ -57,8 +57,16 @@ assert abs(sp["detail"]["drove_noi_down"] - 29_438) < 50, sp["detail"]
 assert ("noi_drop", "Cedar Commons") not in by_tp
 
 # 3. Vacancy — Maple Court, occupancy fell 2.2pp (45 -> 44), $1,500 lost rent.
-vac = by_tp[("vacancy", "Maple Court Apartments")]
-assert vac["detail"]["units_lost"] == 1 and vac["detail"]["total_units"] == 45, vac["detail"]
+# Reported at PROPERTY grain as `occupancy_drop`: the change-based detector gated by
+# `vacancy_min_occupancy_drop_pct` (2.2pp clears the 2.0pp floor). The unit-grain vacancy
+# it explains is folded INTO it, so one move-out is one row that carries both the occupancy
+# movement and the affected unit number — see _fold_vacancies_into_occupancy_drops.
+vac = by_tp[("occupancy_drop", "Maple Court Apartments")]
+assert vac["detail"]["units_lost"] == 1, vac["detail"]
+assert vac["detail"]["occupied_before"] == 45 and vac["detail"]["occupied_after"] == 44, vac["detail"]
+assert abs(vac["detail"]["occupancy_pp_drop"] - 2.2) < 0.1, vac["detail"]
+assert vac["detail"]["vacated_units"] == ["105"], vac["detail"]
+assert vac["unit_number"] is None, "property-grain item carries no single unit"
 assert abs(vac["magnitude"] - 1500) < 1, vac["magnitude"]
 
 # 4. Missing data — Ash Grove (no June records) is present (keyed above).

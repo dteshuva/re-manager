@@ -1,378 +1,138 @@
 INFO:     Will watch for changes in these directories: ['/home/daniel/re-manager/backend']
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [238570] using WatchFiles
-INFO:     Started server process [238579]
+INFO:     Started reloader process [51319] using WatchFiles
+INFO:     Started server process [51323]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     127.0.0.1:40946 - "GET /docs HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40956 - "POST /auth/login HTTP/1.1" 422 Unprocessable Entity
-INFO:     127.0.0.1:46894 - "POST /auth/login HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57752 - "GET /openapi.json HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53718 - "POST /auth/login HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36114 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55542 - "GET /portfolio/dashboard?from=2024-01-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46862 - "GET /portfolio/attention?from=2024-01-01&to=2025-12-01&limit=50 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45484 - "GET /investments HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35090 - "GET /properties/46d27318-797f-4793-ba16-2f107adde59b/monthly?from=2025-04-01&to=2025-08-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35094 - "GET /properties/46d27318-797f-4793-ba16-2f107adde59b/attention?from=2024-01-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35940 - "GET /properties/547a29c6-2818-461a-b52c-bfc52b38d5e8/units/monthly?from=2025-05-01&to=2025-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35944 - "GET /properties/547a29c6-2818-461a-b52c-bfc52b38d5e8/units/roster HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35286 - "GET /periods HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59040 - "GET /periods HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59044 - "GET /properties/46d27318-797f-4793-ba16-2f107adde59b/attention?from=2024-01-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59060 - "GET /categories HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59064 - "GET /portfolio/breakdown?from=2025-06-01&to=2025-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48160 - "GET /categories HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41752 - "GET /import/missing?month=2025-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41766 - "GET /import/template HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41782 - "GET /settings/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53470 - "GET /import/missing?month=2025-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53476 - "GET /import/missing?month=2025-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58362 - "GET /import/missing?month=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45418 - "GET /import/missing?month=2025-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45420 - "POST /records HTTP/1.1" 422 Unprocessable Entity
-INFO:     127.0.0.1:58468 - "GET /categories HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58484 - "POST /records HTTP/1.1" 201 Created
-INFO:     127.0.0.1:38266 - "GET /periods?property_id=85b7dbc9-4915-4f65-aa28-1d09d19ff73a&month=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:38270 - "PUT /periods HTTP/1.1" 200 OK
-INFO:     127.0.0.1:38276 - "PUT /periods HTTP/1.1" 200 OK
-INFO:     127.0.0.1:38292 - "POST /records HTTP/1.1" 423 Locked
-INFO:     127.0.0.1:50126 - "POST /periods/dd23e1d4-a905-4897-b15e-fcc779965acc/unlock HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50140 - "GET /categories HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50148 - "GET /portfolio/monthly?from=2024-02-01&to=2024-02-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56670 - "GET /categories HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56672 - "GET /portfolio/monthly?from=2024-01-01&to=2024-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56688 - "PATCH /categories/600de625-778f-4e91-8510-14986a69d0bd HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56700 - "GET /portfolio/monthly?from=2024-01-01&to=2024-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56706 - "PATCH /categories/600de625-778f-4e91-8510-14986a69d0bd HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54354 - "GET /portfolio/monthly?from=2024-01-01&to=2024-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54356 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52654 - "GET /units/50dc0758-2332-48e3-a07b-5bc28c2f2764/detail HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59366 - "GET /portfolio/dashboard?from=2025-06-01&to=2025-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59370 - "GET /portfolio/dashboard?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:33994 - "POST /auth/login HTTP/1.1" 200 OK
-WARNING:  WatchFiles detected changes in 'app/schemas.py'. Reloading...
+INFO:     127.0.0.1:56098 - "OPTIONS /tags HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56098 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "OPTIONS /portfolio/worst-units?limit=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56098 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56098 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "OPTIONS /tags HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56098 - "OPTIONS /portfolio/variance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56114 - "OPTIONS /portfolio/variance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56098 - "OPTIONS /portfolio/worst-units?limit=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56098 - "OPTIONS /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "OPTIONS /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "OPTIONS /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56114 - "OPTIONS /portfolio/variance?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56130 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56098 - "OPTIONS /portfolio/worst-units?from=2026-07-01&to=2026-07-01&limit=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /tags HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56130 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56114 - "GET /portfolio/worst-units?limit=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56114 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56130 - "GET /portfolio/variance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "GET /portfolio/worst-units?from=2026-07-01&to=2026-07-01&limit=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56130 - "GET /portfolio/variance?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "GET /tags HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56130 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56114 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56130 - "GET /portfolio/worst-units?limit=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56114 - "GET /portfolio/variance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /portfolio/attention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56098 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "OPTIONS /portfolio/dashboard?from=2026-10-01&to=2026-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "OPTIONS /portfolio/variance?from=2026-10-01&to=2026-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56114 - "OPTIONS /portfolio/attention?from=2026-10-01&to=2026-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56130 - "OPTIONS /portfolio/monthly?from=2026-10-01&to=2026-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56130 - "OPTIONS /portfolio/breakdown?from=2026-10-01&to=2026-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56114 - "OPTIONS /portfolio/worst-units?from=2026-10-01&to=2026-10-01&limit=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /portfolio/dashboard?from=2026-10-01&to=2026-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56130 - "GET /portfolio/monthly?from=2026-10-01&to=2026-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56114 - "GET /portfolio/attention?from=2026-10-01&to=2026-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "GET /portfolio/variance?from=2026-10-01&to=2026-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56130 - "GET /portfolio/worst-units?from=2026-10-01&to=2026-10-01&limit=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /portfolio/breakdown?from=2026-10-01&to=2026-10-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56098 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /portfolio/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "OPTIONS /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "GET /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "GET /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/variance?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/variance?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/variance?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/variance?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56102 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56100 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56140 - "POST /auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56140 - "GET /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56144 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56140 - "GET /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56144 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56152 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56156 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/variance?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56140 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56144 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56152 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56140 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/variance?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56156 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56152 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56140 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56144 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57684 - "OPTIONS /auth/signup HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57698 - "POST /auth/signup HTTP/1.1" 201 Created
+INFO:     127.0.0.1:57698 - "GET /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57684 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57698 - "GET /properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54530 - "OPTIONS /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54528 - "OPTIONS /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54528 - "GET /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54530 - "OPTIONS /portfolio/benchmarks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54530 - "OPTIONS /portfolio/benchmarks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54528 - "GET /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54530 - "GET /tags HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54530 - "GET /tags HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54528 - "GET /portfolio/benchmarks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54528 - "GET /portfolio/benchmarks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54540 - "POST /auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54542 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54540 - "GET /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54540 - "GET /investments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54542 - "GET /tags HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54542 - "GET /tags HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54544 - "GET /portfolio/benchmarks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54542 - "GET /portfolio/benchmarks HTTP/1.1" 200 OK
 INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
-INFO:     Finished server process [238579]
-INFO:     Started server process [241782]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  WatchFiles detected changes in 'app/schemas.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [241782]
-INFO:     Started server process [241835]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  WatchFiles detected changes in 'app/routers/audit.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [241835]
-INFO:     Started server process [241920]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  WatchFiles detected changes in 'app/main.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [241920]
-INFO:     Started server process [242040]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  WatchFiles detected changes in 'app/main.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [242040]
-INFO:     Started server process [242103]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  WatchFiles detected changes in 'app/attention.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [242103]
-INFO:     Started server process [242147]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  WatchFiles detected changes in 'app/attention.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [242147]
-INFO:     Started server process [242206]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  WatchFiles detected changes in 'app/attention.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [242206]
-INFO:     Started server process [242273]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     127.0.0.1:54764 - "POST /auth/login HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54780 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48244 - "GET /properties/46d27318-797f-4793-ba16-2f107adde59b/attention?from=2024-01-01&to=2025-12-01&limit=500 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58284 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54788 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2024-01-01&to=2025-12-01&limit=500 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54796 - "GET /properties/1a7266ea-3c52-4db8-a972-cd9d88184065/attention?from=2024-01-01&to=2025-12-01&limit=500 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54798 - "GET /properties/f02e6c43-5034-42ce-8a45-dcd83ecfceb8/attention?from=2024-01-01&to=2025-12-01&limit=500 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54812 - "GET /properties/547a29c6-2818-461a-b52c-bfc52b38d5e8/attention?from=2024-01-01&to=2025-12-01&limit=500 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54828 - "GET /properties/a6209eec-eaea-4e98-9500-aec6326e1387/attention?from=2024-01-01&to=2025-12-01&limit=500 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:38222 - "GET /portfolio/attention?from=2024-01-01&to=2025-12-01&limit=50 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:34066 - "GET /audit HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55184 - "GET /periods?property_id=41ec7c27-a661-495a-b56e-80a4440a4e3e HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35996 - "GET /audit HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36002 - "PUT /periods HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36006 - "GET /periods?property_id=41ec7c27-a661-495a-b56e-80a4440a4e3e&month=2024-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36016 - "POST /periods/8608d427-b15d-4ac2-9cd2-cf3086cdd28c/unlock HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36028 - "GET /audit HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35076 - "GET /audit HTTP/1.1" 401 Unauthorized
-INFO:     127.0.0.1:35080 - "GET /audit HTTP/1.1" 401 Unauthorized
-INFO:     127.0.0.1:60436 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60450 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60464 - "GET /audit?limit=5 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60468 - "GET /properties/46d27318-797f-4793-ba16-2f107adde59b/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42340 - "POST /auth/login HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42352 - "GET /audit HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42358 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:42366 - "GET /properties/46d27318-797f-4793-ba16-2f107adde59b/attention?from=2024-01-01&to=2025-12-01&limit=200 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:34430 - "POST /auth/login HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49030 - "GET /properties/46d27318-797f-4793-ba16-2f107adde59b/attention?from=2024-01-01&to=2025-12-01&limit=200 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40498 - "POST /auth/login HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40502 - "GET /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40510 - "GET /audit HTTP/1.1" 403 Forbidden
-INFO:     127.0.0.1:46114 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46122 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46124 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46140 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46146 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46152 - "OPTIONS /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46114 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46122 - "OPTIONS /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46124 - "OPTIONS /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46140 - "OPTIONS /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46146 - "OPTIONS /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46152 - "OPTIONS /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46114 - "OPTIONS /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46122 - "OPTIONS /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46124 - "OPTIONS /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46140 - "OPTIONS /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46166 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46114 - "GET /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46140 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46166 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46124 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46166 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46166 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46166 - "GET /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46166 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46166 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46152 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46122 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46166 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52246 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52246 - "OPTIONS /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52260 - "OPTIONS /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52246 - "OPTIONS /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52260 - "OPTIONS /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52246 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52260 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52260 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52246 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:46166 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52238 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "OPTIONS /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "OPTIONS /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51124 - "OPTIONS /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51124 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51124 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51118 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51118 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51118 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51094 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51124 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51124 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51096 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51094 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51118 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51096 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51124 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51124 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51096 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51118 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51096 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51124 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51124 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/investment/metrics HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51124 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51096 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51118 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51096 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/investment/metrics HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52270 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51124 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51118 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51118 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/dashboard?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51124 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/attention?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/monthly?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51118 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/monthly?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51124 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/dashboard?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52282 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/attention?from=2026-05-01&to=2026-05-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58608 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/attention?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58606 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/monthly?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/dashboard?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/attention?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58606 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/monthly?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58608 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/dashboard?from=2026-04-01&to=2026-04-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58608 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/dashboard?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58606 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/attention?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "OPTIONS /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/monthly?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58606 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/dashboard?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/attention?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58608 - "GET /properties/85b7dbc9-4915-4f65-aa28-1d09d19ff73a/monthly?from=2026-03-01&to=2026-03-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58606 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58606 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58606 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58608 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58606 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58642 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58608 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58608 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47722 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58642 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58606 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58606 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58642 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58606 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58642 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58608 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47722 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47722 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58608 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58608 - "OPTIONS /categories HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47722 - "OPTIONS /settings/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "OPTIONS /categories HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58608 - "OPTIONS /settings/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58642 - "GET /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58608 - "GET /settings/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /categories HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47722 - "GET /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58642 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "GET /settings/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58608 - "GET /categories HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "GET /auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "OPTIONS /audit?limit=100 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "GET /audit?limit=100 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /properties HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/investment/metrics HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "GET /properties/ba97a411-6558-462f-a9cf-edf09921db64/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "OPTIONS /investments HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "OPTIONS /investments HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58634 - "GET /investments HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47720 - "GET /investments HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44404 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44408 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44404 - "GET /portfolio/dashboard?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44408 - "GET /portfolio/attention?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44404 - "GET /portfolio/monthly?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44404 - "GET /portfolio/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44404 - "GET /portfolio/attention HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44408 - "GET /portfolio/breakdown?from=2026-07-01&to=2026-07-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44398 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44408 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44422 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44398 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40760 - "GET /portfolio/monthly?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44398 - "GET /portfolio/attention?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40776 - "GET /portfolio/dashboard?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44422 - "GET /portfolio/breakdown?from=2026-06-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44404 - "GET /portfolio/monthly HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44408 - "GET /portfolio/breakdown HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44408 - "OPTIONS /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44404 - "OPTIONS /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44422 - "OPTIONS /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40776 - "OPTIONS /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40776 - "GET /portfolio/monthly?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44408 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44404 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44422 - "GET /portfolio/attention?from=2026-01-01&to=2026-06-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37082 - "OPTIONS /portfolio/monthly?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37084 - "OPTIONS /portfolio/dashboard?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37082 - "OPTIONS /portfolio/monthly?from=2026-01-01&to=2026-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37088 - "OPTIONS /portfolio/breakdown?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37084 - "OPTIONS /portfolio/breakdown?from=2026-01-01&to=2026-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37086 - "OPTIONS /portfolio/attention?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37108 - "OPTIONS /portfolio/dashboard?from=2026-01-01&to=2026-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37116 - "OPTIONS /portfolio/attention?from=2026-01-01&to=2026-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37082 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37116 - "GET /portfolio/attention?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37082 - "GET /portfolio/dashboard?from=2026-01-01&to=2026-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37088 - "GET /portfolio/monthly?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37116 - "GET /portfolio/attention?from=2026-01-01&to=2026-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37086 - "GET /portfolio/monthly?from=2026-01-01&to=2026-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37108 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37084 - "GET /portfolio/breakdown?from=2026-01-01&to=2026-01-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37084 - "OPTIONS /portfolio/dashboard?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37108 - "OPTIONS /portfolio/attention?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37116 - "OPTIONS /portfolio/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37086 - "OPTIONS /portfolio/breakdown?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37086 - "GET /portfolio/dashboard?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37116 - "GET /portfolio/attention?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37108 - "GET /portfolio/monthly?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37084 - "GET /portfolio/breakdown?from=2025-01-01&to=2025-12-01 HTTP/1.1" 200 OK
+INFO:     Finished server process [51323]
+INFO:     Stopping reloader process [51319]

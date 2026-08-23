@@ -5,9 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import get_current_user, require_admin
-from app.models import AuditLog, PeriodStatus, Property, User
+from app.deps import Scope, get_scope, require_admin_scope
+from app.models import AuditLog, PeriodStatus, Property
 from app.schemas import PeriodStatusOut, PeriodStatusUpsert
+from app.scoping import get_property_or_404
 from app.summaries import refresh_month
 
 router = APIRouter(prefix="/periods", tags=["periods"])
@@ -22,10 +23,14 @@ def list_periods(
     property_id: str | None = None,
     month: date | None = None,
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
     """List property-month statuses, optionally filtered by property and/or month."""
-    stmt = select(PeriodStatus)
+    # period_status has no account_id of its own — it hangs off a property — so the scope
+    # comes from a join, and an unfiltered list returns only this account's rows.
+    stmt = select(PeriodStatus).join(
+        Property, Property.id == PeriodStatus.property_id
+    ).where(Property.account_id == scope.account_id)
     if property_id:
         stmt = stmt.where(PeriodStatus.property_id == property_id)
     if month:
@@ -37,7 +42,7 @@ def list_periods(
 def set_period_status(
     payload: PeriodStatusUpsert,
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
     """Set a property-month's workflow status (draft → posted → locked), upserting the row.
 
@@ -45,8 +50,7 @@ def set_period_status(
     admin-only ``POST /periods/{id}/unlock`` so the change is audited.
     """
     month = _first_of_month(payload.month)
-    if db.get(Property, payload.property_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Property not found")
+    get_property_or_404(db, scope, payload.property_id)
 
     ps = db.scalar(
         select(PeriodStatus).where(
@@ -75,13 +79,17 @@ def set_period_status(
 def unlock_period(
     period_id: str,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    scope: Scope = Depends(require_admin_scope),
 ):
     """Unlock a locked property-month. Admin role only; every unlock is audited.
 
     Unlocking returns the period to ``posted`` so it can be edited and re-locked.
     """
-    period = db.get(PeriodStatus, period_id)
+    period = db.scalar(
+        select(PeriodStatus)
+        .join(Property, Property.id == PeriodStatus.property_id)
+        .where(PeriodStatus.id == period_id, Property.account_id == scope.account_id)
+    )
     if period is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Period not found")
     if period.status != "locked":
@@ -96,7 +104,8 @@ def unlock_period(
 
     db.add(
         AuditLog(
-            user_id=admin.id,
+            account_id=scope.account_id,
+            user_id=scope.user.id,
             action="unlock_period",
             entity="period_status",
             entity_id=str(period.id),

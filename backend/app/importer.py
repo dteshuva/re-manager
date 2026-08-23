@@ -27,20 +27,35 @@ from app.summaries import refresh_month
 
 
 class _Resolver:
-    """Caches the global lookup tables so a batch import is a handful of queries."""
+    """Caches this ACCOUNT's lookup tables so a batch import is a handful of queries.
 
-    def __init__(self, db: Session):
+    Every table here is loaded scoped to ``account_id``, which is what makes an import
+    tenant-safe: a row naming another account's property or category simply doesn't
+    resolve, and comes back as the same "unknown property/category" issue an outright
+    typo would — the importer never sees, let alone writes to, another account's data.
+    """
+
+    def __init__(self, db: Session, account_id: str):
         self.db = db
-        props = db.scalars(select(Property)).all()
+        self.account_id = account_id
+        props = db.scalars(
+            select(Property).where(Property.account_id == account_id)
+        ).all()
         self.prop_by_id = {p.id: p for p in props}
         self.prop_by_name = {p.name.strip().lower(): p for p in props}
 
-        units = db.scalars(select(Unit)).all()
+        units = db.scalars(
+            select(Unit)
+            .join(Property, Property.id == Unit.property_id)
+            .where(Property.account_id == account_id)
+        ).all()
         self.unit_by_id = {u.id: u for u in units}
         # (property_id, unit_number.lower()) -> unit
         self.unit_by_key = {(u.property_id, u.unit_number.strip().lower()): u for u in units}
 
-        cats = db.scalars(select(Category)).all()
+        cats = db.scalars(
+            select(Category).where(Category.account_id == account_id)
+        ).all()
         self.cat_by_id = {c.id: c for c in cats}
         self.cat_by_name = {c.name.strip().lower(): c for c in cats}
 
@@ -48,7 +63,11 @@ class _Resolver:
         self.locked: dict[str, set[date]] = defaultdict(set)
         from app.models import PeriodStatus
 
-        for ps in db.scalars(select(PeriodStatus).where(PeriodStatus.status == "locked")).all():
+        for ps in db.scalars(
+            select(PeriodStatus)
+            .join(Property, Property.id == PeriodStatus.property_id)
+            .where(PeriodStatus.status == "locked", Property.account_id == account_id)
+        ).all():
             self.locked[ps.property_id].add(ps.month)
 
 
@@ -124,6 +143,7 @@ def _resolve_row(r: _Resolver, row: ImportRow, n: int) -> tuple[_ResolvedRow | N
 
 def apply_import(
     db: Session,
+    account_id: str,
     rows: list[ImportRow],
     *,
     dry_run: bool = False,
@@ -138,8 +158,10 @@ def apply_import(
     ``extra_errors``: row issues from an upstream producer (e.g. the CSV parser) that
     are merged in and count toward the abort decision, so a bad cell in a CSV blocks an
     abort-mode commit just like a bad reference does.
+
+    Everything is resolved and written within ``account_id`` — see :class:`_Resolver`.
     """
-    resolver = _Resolver(db)
+    resolver = _Resolver(db, account_id)
     errors: list[ImportIssue] = list(extra_errors or [])
     resolved: list[_ResolvedRow] = []
 
@@ -186,7 +208,12 @@ def apply_import(
                     )
                 )
                 if rec is None:
-                    rec = MonthlyRecord(property_id=rr.property_id, unit_id=rr.unit_id, month=rr.month)
+                    rec = MonthlyRecord(
+                        account_id=account_id,
+                        property_id=rr.property_id,
+                        unit_id=rr.unit_id,
+                        month=rr.month,
+                    )
                     db.add(rec)
                     db.flush()
                 rec_cache[rkey] = rec
@@ -200,7 +227,11 @@ def apply_import(
                 )
             )
             if li is None:
-                li = LineItem(monthly_record_id=rec.id, category_id=rr.category_id)
+                li = LineItem(
+                    account_id=account_id,
+                    monthly_record_id=rec.id,
+                    category_id=rr.category_id,
+                )
                 db.add(li)
             li.classification = rr.classification
             li.amount = rr.amount

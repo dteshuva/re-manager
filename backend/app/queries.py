@@ -11,9 +11,19 @@ Rollup honesty (the heart of the spec):
     allocated down to units. So ``property total ≠ sum of units`` for those metrics.
     :func:`property_monthly` keeps this honest by returning the unit rollup and the
     property-tier subtotal as distinct blocks alongside the combined total.
+
+Account scoping (migration 0017):
+    Every public function here takes ``account_id`` as a REQUIRED positional argument
+    immediately after ``db``, and every statement filters on it — including the
+    property-scoped and unit-scoped ones, where the id alone would already narrow the
+    result. That redundancy is deliberate: it means a router that forgets to verify
+    ownership still cannot read another account's data, and a *new* call site that
+    forgets to scope is a TypeError rather than a silent leak. "Portfolio" throughout
+    this module means one account's portfolio, never the whole database.
 """
 
-from datetime import date
+import calendar
+from datetime import date, timedelta
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -54,22 +64,59 @@ def _range(col: str = "month") -> str:
     )
 
 
+# ---- Portfolio segmentation (tags) ----------------------------------------------------
+#
+# property_tag is a pure filter axis (property_id, tag): a property may carry any number of
+# tags. The dashboard/breakdown/attention/monthly queries accept an optional ``tags`` list
+# with OR semantics — a property matches if it carries ANY of the requested tags. Passing
+# ``tags=None`` (the default) is a no-op filter (every property matches), so every call site
+# below can unconditionally include this clause and just always bind the ``tags`` param.
+def _tag_where(alias: str = "property_id") -> str:
+    # NOTE: SQLAlchemy's text() bind-parameter parser doesn't handle ":name::type" (the
+    # Postgres cast shorthand right after a bound name) — CAST(:name AS type) instead.
+    return (
+        f"(CAST(:tags AS text[]) IS NULL OR {alias} IN "
+        f"(SELECT property_id FROM property_tag WHERE tag = ANY(CAST(:tags AS text[]))))"
+    )
+
+
 def portfolio_monthly(
-    db: Session, date_from: date | None = None, date_to: date | None = None
+    db: Session,
+    account_id: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    tags: list[str] | None = None,
 ) -> list[dict]:
-    """Portfolio P&L by month across every property and unit (and property-tier rows)."""
+    """Portfolio P&L by month across the account's properties and units (and property-tier rows).
+
+    ``tags`` optionally scopes to properties carrying ANY of the given tags (OR semantics).
+    """
     sql = f"""
         SELECT month, {_sum_cols()}
         FROM v_monthly_pnl
-        WHERE {_range()}
+        WHERE account_id = :account_id AND {_range()} AND {_tag_where()}
         GROUP BY month
         ORDER BY month
     """
-    return _rows(db.execute(text(sql), {"date_from": date_from, "date_to": date_to}))
+    return _rows(
+        db.execute(
+            text(sql),
+            {
+                "account_id": account_id,
+                "date_from": date_from,
+                "date_to": date_to,
+                "tags": tags,
+            },
+        )
+    )
 
 
 def property_monthly(
-    db: Session, property_id: str, date_from: date | None = None, date_to: date | None = None
+    db: Session,
+    account_id: str,
+    property_id: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> list[dict]:
     """Property P&L by month with an honest unit-rollup vs property-tier split.
 
@@ -83,14 +130,19 @@ def property_monthly(
             {_sum_cols(prefix="unit_", where="unit_id IS NOT NULL")},
             {_sum_cols(prefix="tier_", where="unit_id IS NULL")}
         FROM v_monthly_pnl
-        WHERE property_id = :property_id AND {_range()}
+        WHERE account_id = :account_id AND property_id = :property_id AND {_range()}
         GROUP BY month
         ORDER BY month
     """
     rows = _rows(
         db.execute(
             text(sql),
-            {"property_id": property_id, "date_from": date_from, "date_to": date_to},
+            {
+                "account_id": account_id,
+                "property_id": property_id,
+                "date_from": date_from,
+                "date_to": date_to,
+            },
         )
     )
     return [
@@ -105,7 +157,11 @@ def property_monthly(
 
 
 def property_units_monthly(
-    db: Session, property_id: str, date_from: date | None = None, date_to: date | None = None
+    db: Session,
+    account_id: str,
+    property_id: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> list[dict]:
     """Per-unit monthly P&L for a property (property-tier-only rows excluded).
 
@@ -121,7 +177,8 @@ def property_units_monthly(
             {_sum_cols()}
         FROM v_monthly_pnl p
         JOIN units u ON u.id = p.unit_id
-        WHERE p.property_id = :property_id
+        WHERE p.account_id = :account_id
+          AND p.property_id = :property_id
           AND p.unit_id IS NOT NULL
           AND {_range()}
         GROUP BY u.id, u.unit_number, u.label, p.month
@@ -130,26 +187,40 @@ def property_units_monthly(
     return _rows(
         db.execute(
             text(sql),
-            {"property_id": property_id, "date_from": date_from, "date_to": date_to},
+            {
+                "account_id": account_id,
+                "property_id": property_id,
+                "date_from": date_from,
+                "date_to": date_to,
+            },
         )
     )
 
 
 def unit_monthly(
-    db: Session, unit_id: str, date_from: date | None = None, date_to: date | None = None
+    db: Session,
+    account_id: str,
+    unit_id: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> list[dict]:
     """Single-unit P&L by month."""
     sql = f"""
         SELECT month, {_sum_cols()}
         FROM v_monthly_pnl
-        WHERE unit_id = :unit_id AND {_range()}
+        WHERE account_id = :account_id AND unit_id = :unit_id AND {_range()}
         GROUP BY month
         ORDER BY month
     """
     return _rows(
         db.execute(
             text(sql),
-            {"unit_id": unit_id, "date_from": date_from, "date_to": date_to},
+            {
+                "account_id": account_id,
+                "unit_id": unit_id,
+                "date_from": date_from,
+                "date_to": date_to,
+            },
         )
     )
 
@@ -163,15 +234,31 @@ def _months_inclusive(a: date, b: date) -> int:
     return (b.year - a.year) * 12 + (b.month - a.month) + 1
 
 
-def _period_metrics(db: Session, table: str, date_from: date, date_to: date, where: str, params: dict):
+def _period_metrics(
+    db: Session,
+    table: str,
+    date_from: date,
+    date_to: date,
+    where: str,
+    params: dict,
+    *,
+    multi_scope: bool = False,
+) -> dict | None:
     """Aggregate one summary table over a month range into a single KPI block.
 
     Financial metrics SUM over the period (they're flows). Occupancy is the
     period's unit-month-weighted average; unit counts / property_count are the
     period-end snapshot (stocks, shown as of the last month with data). Returns
     None when the period has no rows.
+
+    ``multi_scope=True`` is for a tag-filtered *portfolio* view read from
+    ``property_month_summary`` (i.e. ``where`` can match several properties' rows sharing
+    the same month) — the snapshot then SUMs every matching row at the latest month and
+    counts the distinct properties, rather than assuming one row per month (which holds for
+    ``portfolio_month_summary`` and for a single property's own rows, but not for an
+    arbitrary multi-property subset).
     """
-    has_pcount = table == "portfolio_month_summary"
+    has_pcount = table == "portfolio_month_summary" or multi_scope
     sums = ", ".join(f"COALESCE(SUM({m}), 0) AS {m}" for m in METRICS)
     p = {**params, "f": date_from, "t": date_to}
     agg = db.execute(
@@ -185,14 +272,31 @@ def _period_metrics(db: Session, table: str, date_from: date, date_to: date, whe
     ).mappings().first()
     if not agg or agg["n"] == 0:
         return None
-    snap_cols = "occupied_units, total_units" + (", property_count" if has_pcount else "")
-    snap = db.execute(
-        text(
-            f"SELECT {snap_cols} FROM {table} WHERE {where} AND month BETWEEN :f AND :t "
-            "ORDER BY month DESC LIMIT 1"
-        ),
-        p,
-    ).mappings().first()
+    if multi_scope:
+        snap = db.execute(
+            text(
+                f"""
+                WITH latest AS (
+                    SELECT max(month) AS m FROM {table} WHERE {where} AND month BETWEEN :f AND :t
+                )
+                SELECT COALESCE(SUM(occupied_units), 0) AS occupied_units,
+                       COALESCE(SUM(total_units), 0) AS total_units,
+                       COUNT(*) AS property_count
+                FROM {table}, latest
+                WHERE {where} AND month = latest.m
+                """
+            ),
+            p,
+        ).mappings().first()
+    else:
+        snap_cols = "occupied_units, total_units" + (", property_count" if has_pcount else "")
+        snap = db.execute(
+            text(
+                f"SELECT {snap_cols} FROM {table} WHERE {where} AND month BETWEEN :f AND :t "
+                "ORDER BY month DESC LIMIT 1"
+            ),
+            p,
+        ).mappings().first()
     out = {m: float(agg[m]) for m in METRICS}
     tot = float(agg["tot_sum"])
     out["occupancy"] = (float(agg["occ_sum"]) / tot) if tot > 0 else None
@@ -204,27 +308,65 @@ def _period_metrics(db: Session, table: str, date_from: date, date_to: date, whe
 
 
 def portfolio_dashboard(
-    db: Session, date_from: date | None = None, date_to: date | None = None
+    db: Session,
+    account_id: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    tags: list[str] | None = None,
 ) -> dict:
     """Landing-page KPI band + T12 sparklines, read STRICTLY from ``portfolio_month_summary``.
 
     Period-aware: with no params it defaults to the latest single month (current vs prior
     month). Given a range (a month, YTD, T12, or a custom span), it sums the period and
     compares against the immediately preceding equal-length period for the KPI deltas. The
-    sparklines stay a trailing-12 ending at the period's last month.
+    sparklines stay a trailing-12 ending at the period's last month. ``tags`` optionally
+    scopes to properties carrying ANY of the given tags (OR semantics) — the whole KPI band,
+    prior-period comparison, and sparklines are recomputed over just that subset. Unfiltered
+    (the common case) still reads STRICTLY from the precomputed ``portfolio_month_summary``;
+    a tag filter re-aggregates ``property_month_summary`` for just the matching properties
+    (there's no precomputed rollup for an arbitrary tag subset).
     """
-    return _dashboard_payload(db, "portfolio_month_summary", "TRUE", {}, date_from, date_to)
+    if tags:
+        return _dashboard_payload(
+            db,
+            "property_month_summary",
+            f"account_id = :account_id AND {_tag_where()}",
+            {"account_id": account_id, "tags": tags},
+            date_from,
+            date_to,
+            multi_scope=True,
+        )
+    return _dashboard_payload(
+        db,
+        "portfolio_month_summary",
+        "account_id = :account_id",
+        {"account_id": account_id},
+        date_from,
+        date_to,
+    )
 
 
-def _dashboard_payload(db, table, where, params, date_from, date_to):
-    latest_sql = f"SELECT max(month) FROM {table} WHERE {where}"
+def _resolve_range(
+    db: Session, table: str, where: str, params: dict, date_from: date | None, date_to: date | None
+) -> tuple[date | None, date | None]:
+    """Fill in an unspecified range the same way every period-aware endpoint does: an
+    unspecified ``date_to`` defaults to the scope's latest summarized month, and an
+    unspecified ``date_from`` defaults to that same month (a single-month period). Returns
+    ``(None, None)`` when the scope has no summarized data at all."""
     if date_to is None:
-        date_to = db.execute(text(latest_sql), params).scalar()
+        date_to = db.execute(text(f"SELECT max(month) FROM {table} WHERE {where}"), params).scalar()
+    if date_to is None:
+        return None, None
+    if date_from is None:
+        date_from = date_to
+    return date_from, date_to
+
+
+def _dashboard_payload(db, table, where, params, date_from, date_to, *, multi_scope: bool = False):
+    date_from, date_to = _resolve_range(db, table, where, params, date_from, date_to)
     if date_to is None:
         return {"period_from": None, "period_to": None, "prior_from": None,
                 "prior_to": None, "current": None, "prior": None, "trend": []}
-    if date_from is None:
-        date_from = date_to
 
     length = _months_inclusive(date_from, date_to)
     # A very early `date_from` can push the equal-length prior period below year 1, which
@@ -233,18 +375,35 @@ def _dashboard_payload(db, table, where, params, date_from, date_to):
     try:
         prior_to = _shift_month(date_from, -1)
         prior_from = _shift_month(date_from, -length)
-        prior = _period_metrics(db, table, prior_from, prior_to, where, params)
+        prior = _period_metrics(db, table, prior_from, prior_to, where, params, multi_scope=multi_scope)
     except (ValueError, OverflowError):
         prior_from = prior_to = prior = None
 
-    current = _period_metrics(db, table, date_from, date_to, where, params)
-    trend = db.execute(
-        text(
-            "SELECT month, gross_rent, operating_expenses, noi, cash_flow, occupancy "
-            f"FROM {table} WHERE {where} AND month <= :t ORDER BY month DESC LIMIT 12"
-        ),
-        {**params, "t": date_to},
-    ).mappings().all()
+    current = _period_metrics(db, table, date_from, date_to, where, params, multi_scope=multi_scope)
+    if multi_scope:
+        # Several properties can share a month, so the sparkline sums each month's matching
+        # rows rather than reading one row per month straight off the table.
+        trend = db.execute(
+            text(
+                f"""
+                SELECT month, SUM(gross_rent) AS gross_rent, SUM(operating_expenses) AS operating_expenses,
+                       SUM(noi) AS noi, SUM(cash_flow) AS cash_flow,
+                       CASE WHEN SUM(total_units) > 0
+                            THEN SUM(occupied_units)::numeric / SUM(total_units) ELSE NULL END AS occupancy
+                FROM {table} WHERE {where} AND month <= :t
+                GROUP BY month ORDER BY month DESC LIMIT 12
+                """
+            ),
+            {**params, "t": date_to},
+        ).mappings().all()
+    else:
+        trend = db.execute(
+            text(
+                "SELECT month, gross_rent, operating_expenses, noi, cash_flow, occupancy "
+                f"FROM {table} WHERE {where} AND month <= :t ORDER BY month DESC LIMIT 12"
+            ),
+            {**params, "t": date_to},
+        ).mappings().all()
 
     return {
         "period_from": date_from,
@@ -258,22 +417,35 @@ def _dashboard_payload(db, table, where, params, date_from, date_to):
 
 
 def property_dashboard(
-    db: Session, property_id: str, date_from: date | None = None, date_to: date | None = None
+    db: Session,
+    account_id: str,
+    property_id: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> dict | None:
     """Property-scoped, period-aware KPI band + T12 sparklines, from ``property_month_summary``.
 
     Mirrors :func:`portfolio_dashboard` scoped to one property. Returns None if the property
-    does not exist.
+    does not exist **in this account** — another account's property is indistinguishable
+    from a nonexistent one, which is what the router turns into a 404.
     """
     prop = db.execute(
-        text("SELECT id::text AS id, name, type FROM properties WHERE id = :id"),
-        {"id": property_id},
+        text(
+            "SELECT id::text AS id, name, type FROM properties "
+            "WHERE id = :id AND account_id = :account_id"
+        ),
+        {"id": property_id, "account_id": account_id},
     ).mappings().first()
     if prop is None:
         return None
 
     payload = _dashboard_payload(
-        db, "property_month_summary", "property_id = :id", {"id": property_id}, date_from, date_to
+        db,
+        "property_month_summary",
+        "account_id = :account_id AND property_id = :id",
+        {"account_id": account_id, "id": property_id},
+        date_from,
+        date_to,
     )
     return {
         "property_id": prop["id"],
@@ -297,6 +469,7 @@ _ROSTER_SORT = {
 
 def unit_roster(
     db: Session,
+    account_id: str,
     property_id: str,
     month: date,
     *,
@@ -307,37 +480,66 @@ def unit_roster(
 ) -> dict:
     """Server-paginated/sortable unit roster for a property-month (from unit_month_summary).
 
-    Every unit in the roster appears (LEFT JOIN), so units that are vacant for the month
-    show as status='vacant' with zeros, not as missing rows. ``noi_change`` is vs the prior
-    month (NULL when the unit has no prior-month data).
+    Every unit in the roster appears (LEFT JOIN). ``status`` is a 3-way state: 'occupied',
+    'vacant' (a unit-month record WAS posted, explicitly flagged vacant or $0 rent), or
+    'missing' (no record posted for this unit-month at all — distinct from a real vacancy).
+    ``noi_change`` is vs the prior month (NULL when the unit has no prior-month data).
+
+    ``lease_status`` (migration 0012) is added ALONGSIDE ``status``, not in place of it: it's
+    the unit's CURRENT lease state (today, not this row's month) — a read-only, additive
+    cross-reference so an analyst can see the record-driven monthly status and the
+    lease-driven current status side by side. The two are independent signals (one is a
+    historical per-month fact, the other a live snapshot) and can legitimately disagree — a
+    unit vacant per its June-2025 record can show an 'active' lease_status if it was re-let
+    since. No existing math (occupancy %, attention thresholds) changes; see migration
+    0012's docstring / the rent-roll changelog for why a full merge isn't attempted here.
     """
     prior = date(month.year + (month.month - 2) // 12, (month.month - 2) % 12 + 1, 1)
     sort_col = _ROSTER_SORT.get(sort, "u.unit_number")
     direction = "DESC" if order.lower() == "desc" else "ASC"
 
     total = db.execute(
-        text("SELECT count(*) FROM units WHERE property_id = :pid"), {"pid": property_id}
+        text(
+            "SELECT count(*) FROM units u JOIN properties p ON p.id = u.property_id "
+            "WHERE u.property_id = :pid AND p.account_id = :account_id"
+        ),
+        {"pid": property_id, "account_id": account_id},
     ).scalar()
 
     metric_cols = ",\n            ".join(f"COALESCE(cur.{m}, 0) AS {m}" for m in METRICS)
     rows = db.execute(
         text(
             f"""
+            WITH {_CURRENT_LEASE_CTE}
             SELECT
                 u.id::text AS unit_id, u.unit_number, u.label,
                 {metric_cols},
-                CASE WHEN COALESCE(cur.gross_rent, 0) > 0 THEN 'occupied' ELSE 'vacant' END AS status,
+                CASE
+                    WHEN cur.unit_id IS NULL THEN 'missing'
+                    WHEN cur.is_vacant OR cur.gross_rent = 0 THEN 'vacant'
+                    ELSE 'occupied'
+                END AS status,
                 CASE WHEN prev.unit_id IS NOT NULL
-                     THEN COALESCE(cur.noi, 0) - prev.noi ELSE NULL END AS noi_change
+                     THEN COALESCE(cur.noi, 0) - prev.noi ELSE NULL END AS noi_change,
+                cl.status AS lease_status, cl.tenant_name AS lease_tenant_name
             FROM units u
+            JOIN properties p ON p.id = u.property_id
             LEFT JOIN unit_month_summary cur ON cur.unit_id = u.id AND cur.month = :month
             LEFT JOIN unit_month_summary prev ON prev.unit_id = u.id AND prev.month = :prior
-            WHERE u.property_id = :pid
+            LEFT JOIN current_lease cl ON cl.unit_id = u.id
+            WHERE u.property_id = :pid AND p.account_id = :account_id
             ORDER BY {sort_col} {direction}, u.unit_number ASC
             LIMIT :limit OFFSET :offset
             """
         ),
-        {"pid": property_id, "month": month, "prior": prior, "limit": limit, "offset": offset},
+        {
+            "pid": property_id,
+            "account_id": account_id,
+            "month": month,
+            "prior": prior,
+            "limit": limit,
+            "offset": offset,
+        },
     )
     return {
         "month": month,
@@ -347,24 +549,34 @@ def unit_roster(
     }
 
 
-def unit_detail(db: Session, unit_id: str) -> dict | None:
+def unit_detail(db: Session, account_id: str, unit_id: str) -> dict | None:
     """Level 3 unit detail: identity + full monthly P&L from ``unit_month_summary``.
 
     The month series is spined on the property's summarized months and LEFT JOINed to the
-    unit, so months the unit was vacant show as zeros with status='vacant' (e.g. a unit that
-    went vacant mid-year visibly drops to 0), instead of silently disappearing. Returns None
-    if the unit does not exist.
+    unit. ``status`` is 3-way: 'occupied', 'vacant' (a record WAS posted for that unit-month,
+    explicitly flagged vacant or $0 rent), or 'missing' (no record posted for that unit-month
+    at all — distinct from a real vacancy). Returns None if the unit does not exist.
+
+    ``lease_status``/``tenant_name`` (migration 0012) are the unit's CURRENT lease — today's
+    live snapshot, added ALONGSIDE (not replacing) the per-month record-driven ``status``
+    series above. The two are independent signals that can legitimately disagree (e.g. a
+    unit vacant per its last posted record but re-let since, or vice versa); see
+    ``unit_roster``'s docstring and the rent-roll changelog for why they aren't merged.
     """
     u = db.execute(
         text(
-            """
+            f"""
+            WITH {_CURRENT_LEASE_CTE}
             SELECT u.id::text AS uid, u.unit_number, u.label,
-                   u.property_id::text AS pid, p.name AS pname
-            FROM units u JOIN properties p ON p.id = u.property_id
-            WHERE u.id = :id
+                   u.property_id::text AS pid, p.name AS pname,
+                   cl.status AS lease_status, cl.tenant_name AS lease_tenant_name
+            FROM units u
+            JOIN properties p ON p.id = u.property_id
+            LEFT JOIN current_lease cl ON cl.unit_id = u.id
+            WHERE u.id = :id AND p.account_id = :account_id
             """
         ),
-        {"id": unit_id},
+        {"id": unit_id, "account_id": account_id},
     ).mappings().first()
     if u is None:
         return None
@@ -375,14 +587,18 @@ def unit_detail(db: Session, unit_id: str) -> dict | None:
             f"""
             SELECT pm.month,
                 {metric_cols},
-                CASE WHEN COALESCE(ums.gross_rent, 0) > 0 THEN 'occupied' ELSE 'vacant' END AS status
+                CASE
+                    WHEN ums.unit_id IS NULL THEN 'missing'
+                    WHEN ums.is_vacant OR ums.gross_rent = 0 THEN 'vacant'
+                    ELSE 'occupied'
+                END AS status
             FROM property_month_summary pm
             LEFT JOIN unit_month_summary ums ON ums.unit_id = :uid AND ums.month = pm.month
-            WHERE pm.property_id = :pid
+            WHERE pm.property_id = :pid AND pm.account_id = :account_id
             ORDER BY pm.month
             """
         ),
-        {"uid": unit_id, "pid": u["pid"]},
+        {"uid": unit_id, "pid": u["pid"], "account_id": account_id},
     ).mappings().all()
     months = [dict(r) for r in rows]
     return {
@@ -391,13 +607,19 @@ def unit_detail(db: Session, unit_id: str) -> dict | None:
         "label": u["label"],
         "property_id": u["pid"],
         "property_name": u["pname"],
-        "status": months[-1]["status"] if months else "vacant",
+        "status": months[-1]["status"] if months else "missing",
+        "lease_status": u["lease_status"] or "vacant",
+        "lease_tenant_name": u["lease_tenant_name"],
         "months": months,
     }
 
 
 def portfolio_breakdown(
-    db: Session, date_from: date | None = None, date_to: date | None = None
+    db: Session,
+    account_id: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    tags: list[str] | None = None,
 ) -> dict:
     """Period totals across the whole hierarchy: portfolio total + per-property breakdown
     (each with its unit list and the honest unit-vs-property-tier split).
@@ -405,9 +627,15 @@ def portfolio_breakdown(
     Two grouped queries (properties, units) over ``v_monthly_pnl``, assembled into a tree.
     LEFT JOINs keep units with no data in the period (as zeros), but properties with no
     entries in the period are dropped from the breakdown. All figures stay computed from
-    current classifications.
+    current classifications. ``tags`` optionally scopes to properties carrying ANY of the
+    given tags (OR semantics); the portfolio ``total`` is summed over only those properties.
     """
-    params = {"date_from": date_from, "date_to": date_to}
+    params = {
+        "account_id": account_id,
+        "date_from": date_from,
+        "date_to": date_to,
+        "tags": tags,
+    }
 
     prop_sql = f"""
         SELECT
@@ -419,6 +647,7 @@ def portfolio_breakdown(
         FROM properties p
         LEFT JOIN v_monthly_pnl v
                ON v.property_id = p.id AND {_range("v.month")}
+        WHERE p.account_id = :account_id AND {_tag_where("p.id")}
         GROUP BY p.id, p.name, p.type
         HAVING COUNT(v.month) > 0
         ORDER BY p.name
@@ -433,8 +662,10 @@ def portfolio_breakdown(
             u.label             AS label,
             {_sum_cols()}
         FROM units u
+        JOIN properties p ON p.id = u.property_id
         LEFT JOIN v_monthly_pnl v
                ON v.unit_id = u.id AND {_range("v.month")}
+        WHERE p.account_id = :account_id AND {_tag_where("u.property_id")}
         GROUP BY u.property_id, u.id, u.unit_number, u.label
         ORDER BY u.unit_number
     """
@@ -478,15 +709,18 @@ def portfolio_breakdown(
 #     a stub produces garbage. Average cash-on-cash needs >= 24 months to average >1 year.
 
 
-def _load_investment_months(db: Session, property_id: str, purchase_date: date) -> list[dict]:
+def _load_investment_months(
+    db: Session, account_id: str, property_id: str, purchase_date: date
+) -> list[dict]:
     """Summarized months at/after the purchase month, ascending (noi, cash_flow, debt_service)."""
     first = purchase_date.replace(day=1)
     rows = db.execute(
         text(
             "SELECT month, noi, cash_flow, debt_service FROM property_month_summary "
-            "WHERE property_id = :id AND month >= :first ORDER BY month"
+            "WHERE account_id = :account_id AND property_id = :id AND month >= :first "
+            "ORDER BY month"
         ),
-        {"id": property_id, "first": first},
+        {"account_id": account_id, "id": property_id, "first": first},
     ).mappings().all()
     return [dict(r) for r in rows]
 
@@ -569,15 +803,19 @@ def _investment_figures(inv: dict, months: list[dict]) -> dict:
     return out
 
 
-def investment_metrics(db: Session, property_id: str) -> dict | None:
+def investment_metrics(db: Session, account_id: str, property_id: str) -> dict | None:
     """One property's acquisition inputs + computed return metrics.
 
-    Returns None if the property does not exist. If the property exists but has no investment
-    row yet, returns the identity with all inputs/metrics None (so the UI can prompt for input).
+    Returns None if the property does not exist in this account. If the property exists but
+    has no investment row yet, returns the identity with all inputs/metrics None (so the UI
+    can prompt for input).
     """
     prop = db.execute(
-        text("SELECT id::text AS id, name, type FROM properties WHERE id = :id"),
-        {"id": property_id},
+        text(
+            "SELECT id::text AS id, name, type FROM properties "
+            "WHERE id = :id AND account_id = :account_id"
+        ),
+        {"id": property_id, "account_id": account_id},
     ).mappings().first()
     if prop is None:
         return None
@@ -604,20 +842,21 @@ def investment_metrics(db: Session, property_id: str) -> dict | None:
     }
     inv = db.execute(
         text(
-            "SELECT purchase_price, closing_costs, loan_amount, purchase_date "
-            "FROM property_investment WHERE property_id = :id"
+            "SELECT i.purchase_price, i.closing_costs, i.loan_amount, i.purchase_date "
+            "FROM property_investment i JOIN properties p ON p.id = i.property_id "
+            "WHERE i.property_id = :id AND p.account_id = :account_id"
         ),
-        {"id": property_id},
+        {"id": property_id, "account_id": account_id},
     ).mappings().first()
     if inv is None:
         return base
 
-    months = _load_investment_months(db, property_id, inv["purchase_date"])
+    months = _load_investment_months(db, account_id, property_id, inv["purchase_date"])
     base.update(_investment_figures(inv, months))
     return base
 
 
-def portfolio_investment(db: Session) -> dict:
+def portfolio_investment(db: Session, account_id: str) -> dict:
     """Every property with investment inputs + value-weighted portfolio aggregates.
 
     Aggregates are component sums (Σ annualized-NOI / Σ price, Σ T12 cash flow / Σ equity,
@@ -630,9 +869,26 @@ def portfolio_investment(db: Session) -> dict:
             "SELECT p.id::text AS id, p.name, p.type, i.purchase_price, i.closing_costs, "
             "       i.loan_amount, i.purchase_date "
             "FROM property_investment i JOIN properties p ON p.id = i.property_id "
+            "WHERE p.account_id = :account_id "
             "ORDER BY p.name"
-        )
+        ),
+        {"account_id": account_id},
     ).mappings().all()
+
+    # Adoption-gap nudge: which properties have NO investment row at all yet.
+    all_props = db.execute(
+        text(
+            "SELECT id::text AS id, name, type FROM properties "
+            "WHERE account_id = :account_id ORDER BY name"
+        ),
+        {"account_id": account_id},
+    ).mappings().all()
+    have_ids = {r["id"] for r in rows}
+    missing_properties = [
+        {"property_id": p["id"], "property_name": p["name"], "type": p["type"]}
+        for p in all_props
+        if p["id"] not in have_ids
+    ]
 
     props: list[dict] = []
     sum_noi_annual = sum_price = 0.0
@@ -642,7 +898,7 @@ def portfolio_investment(db: Session) -> dict:
     total_price = total_equity = 0.0
 
     for r in rows:
-        months = _load_investment_months(db, r["id"], r["purchase_date"])
+        months = _load_investment_months(db, account_id, r["id"], r["purchase_date"])
         fig = _investment_figures(r, months)
         props.append(
             {"property_id": r["id"], "property_name": r["name"], "type": r["type"], **fig}
@@ -674,4 +930,1533 @@ def portfolio_investment(db: Session) -> dict:
         "cap_rate_property_count": cap_n,
         "cash_on_cash_property_count": coc_n,
         "dscr_property_count": dscr_n,
+        "total_property_count": len(all_props),
+        "missing_property_count": len(missing_properties),
+        "missing_properties": missing_properties,
+    }
+
+
+# ---- Portfolio benchmarking (cross-property comparison against the portfolio average) ------
+#
+# Pure read-side aggregation over metrics computed elsewhere — NOTHING here is recomputed from
+# raw line items. NOI/opex/physical-occupancy come from ``property_month_summary`` via the same
+# ``_period_metrics`` helper ``property_dashboard`` uses; cap rate / cash-on-cash come from
+# ``investment_metrics`` (T12, acquisition-based, unchanged); economic occupancy reuses the rent
+# roll's current lease-status snapshot (``_rent_roll_sql`` / ``_rent_roll_row`` /
+# `_occupancy_summary`), grouped per property in Python from one shared query.
+#
+# Unlike ``portfolio_investment``'s value-weighted aggregates (Σ / Σ, so a big property
+# dominates), the "portfolio average" here is a SIMPLE MEAN across properties — each property
+# counts once, which is the point of a benchmarking view (compare Property A to "the book",
+# not to a book that's secretly mostly Property A). The median is reported alongside it since
+# these per-property ratios can be skewed by one outlier.
+_BENCHMARK_METRICS: tuple[tuple[str, bool], ...] = (
+    ("noi_per_unit", True),
+    ("opex_ratio", False),          # lower opex ratio is better
+    ("physical_occupancy", True),
+    ("economic_occupancy", True),
+    ("cap_rate", True),
+    ("cash_on_cash", True),
+)
+
+
+def _mean_median(values: list[float]) -> tuple[float | None, float | None]:
+    if not values:
+        return None, None
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    median = s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2
+    return sum(s) / n, median
+
+
+def _rank_and_percentile(
+    values_by_property: dict[str, float | None], higher_is_better: bool
+) -> dict[str, tuple[int, float]]:
+    """Dense rank (1 = best) + percentile (0..100, 100 = best) among properties with a
+    non-null value. Ties share a rank. A lone property gets percentile 100."""
+    present = [(pid, v) for pid, v in values_by_property.items() if v is not None]
+    present.sort(key=lambda kv: kv[1], reverse=higher_is_better)
+    n = len(present)
+    out: dict[str, tuple[int, float]] = {}
+    rank = 0
+    prev_v = None
+    for i, (pid, v) in enumerate(present):
+        if prev_v is None or v != prev_v:
+            rank = i + 1
+        prev_v = v
+        pct = 100.0 if n <= 1 else (n - rank) / (n - 1) * 100.0
+        out[pid] = (rank, pct)
+    return out
+
+
+def portfolio_benchmarks(
+    db: Session,
+    account_id: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    tags: list[str] | None = None,
+) -> dict:
+    """Benchmark every property against the portfolio's simple-mean average on NOI/unit,
+    operating expense ratio, physical + economic occupancy, cap rate, and cash-on-cash — with
+    each property's delta vs the mean and its rank/percentile. See the module comment above
+    for the mean-vs-value-weighted and occupancy-scoping notes. ``tags`` scopes both the rows
+    and the average (OR semantics).
+    """
+    if tags:
+        date_from, date_to = _resolve_range(
+            db,
+            "property_month_summary",
+            f"account_id = :account_id AND {_tag_where()}",
+            {"account_id": account_id, "tags": tags},
+            date_from,
+            date_to,
+        )
+    else:
+        date_from, date_to = _resolve_range(
+            db,
+            "portfolio_month_summary",
+            "account_id = :account_id",
+            {"account_id": account_id},
+            date_from,
+            date_to,
+        )
+
+    props = _rows(
+        db.execute(
+            text(
+                "SELECT id::text AS id, name, type FROM properties "
+                f"WHERE account_id = :account_id AND {_tag_where('id')} ORDER BY name"
+            ),
+            {"account_id": account_id, "tags": tags},
+        )
+    )
+
+    stats_shell = {name: {"mean": None, "median": None, "count": 0, "higher_is_better": hib} for name, hib in _BENCHMARK_METRICS}
+    if date_to is None or not props:
+        return {
+            "period_from": date_from, "period_to": date_to, "tags": tags,
+            "property_count": len(props), "properties": [], **stats_shell,
+        }
+
+    # NOI/opex/physical-occupancy: one call per property to the exact helper property_dashboard
+    # uses, so this always agrees with that endpoint for the same period.
+    per_property: dict[str, dict] = {}
+    for p in props:
+        pm = _period_metrics(
+            db,
+            "property_month_summary",
+            date_from,
+            date_to,
+            "account_id = :account_id AND property_id = :id",
+            {"account_id": account_id, "id": p["id"]},
+        )
+        per_property[p["id"]] = {"property_name": p["name"], "type": p["type"], "period": pm}
+
+    # Cap rate / cash-on-cash: the existing per-property investment-metrics function (T12,
+    # acquisition-based; None when a property has no investment inputs on file yet).
+    for p in props:
+        per_property[p["id"]]["invest"] = investment_metrics(db, account_id, p["id"])
+
+    # Economic occupancy: one shared rent-roll query for every matching property, grouped in
+    # Python and fed through the same `_occupancy_summary` the rent-roll endpoints use.
+    today = date.today()
+    roll_rows = [
+        _rent_roll_row(r, today)
+        for r in _rows(
+            db.execute(
+                text(_rent_roll_sql(f"p.account_id = :account_id AND {_tag_where('p.id')}")),
+                {"account_id": account_id, "tags": tags},
+            )
+        )
+    ]
+    by_prop_rows: dict[str, list[dict]] = {}
+    for r in roll_rows:
+        by_prop_rows.setdefault(r["property_id"], []).append(r)
+    for pid, rows in by_prop_rows.items():
+        if pid in per_property:
+            per_property[pid]["economic_occupancy"] = _occupancy_summary(rows)["economic_occupancy"]
+
+    # Raw per-metric values, keyed by property id.
+    raw: dict[str, dict[str, float | None]] = {name: {} for name, _ in _BENCHMARK_METRICS}
+    for pid, d in per_property.items():
+        pm = d["period"]
+        gross_rent = pm["gross_rent"] if pm else None
+        opex = pm["operating_expenses"] if pm else None
+        noi = pm["noi"] if pm else None
+        total_units = pm["total_units"] if pm else None
+        inv = d["invest"]
+        raw["noi_per_unit"][pid] = (noi / total_units) if (pm and total_units) else None
+        raw["opex_ratio"][pid] = (opex / gross_rent) if (pm and gross_rent) else None
+        raw["physical_occupancy"][pid] = pm["occupancy"] if pm else None
+        raw["economic_occupancy"][pid] = d.get("economic_occupancy")
+        raw["cap_rate"][pid] = inv["cap_rate"] if inv else None
+        raw["cash_on_cash"][pid] = inv["cash_on_cash"] if inv else None
+
+    stats: dict[str, dict] = {}
+    ranks: dict[str, dict[str, tuple[int, float]]] = {}
+    for name, hib in _BENCHMARK_METRICS:
+        values = [v for v in raw[name].values() if v is not None]
+        mean, median = _mean_median(values)
+        stats[name] = {"mean": mean, "median": median, "count": len(values), "higher_is_better": hib}
+        ranks[name] = _rank_and_percentile(raw[name], hib)
+
+    properties = []
+    for p in props:
+        pid = p["id"]
+        row = {"property_id": pid, "property_name": p["name"], "type": p["type"]}
+        for name, _hib in _BENCHMARK_METRICS:
+            v = raw[name].get(pid)
+            mean = stats[name]["mean"]
+            rank_pct = ranks[name].get(pid)
+            row[name] = {
+                "value": v,
+                "delta_vs_mean": (v - mean) if (v is not None and mean is not None) else None,
+                "rank": rank_pct[0] if rank_pct else None,
+                "percentile": rank_pct[1] if rank_pct else None,
+            }
+        properties.append(row)
+
+    return {
+        "period_from": date_from, "period_to": date_to, "tags": tags,
+        "property_count": len(props), "properties": properties, **stats,
+    }
+
+
+# ---- Budget / variance (flat annual plan, pro-rated to actual-vs-plan) ---------------------
+#
+# ``property_budget`` holds one flat annual figure per (property, year); nothing here is
+# stored beyond that raw input. The monthly plan (annual / 12) and every variance number are
+# computed on read against ``property_month_summary`` / ``portfolio_month_summary``, so budget
+# entry never has to be kept in sync with actuals math and reclassifications flow through
+# automatically, same as every other computed metric in this module.
+
+
+def _year_overlap_months(date_from: date, date_to: date, year: int) -> int:
+    """How many months of ``[date_from, date_to]`` fall inside calendar ``year``."""
+    start = max(date_from, date(year, 1, 1))
+    end = min(date_to, date(year, 12, 1))
+    if start > end:
+        return 0
+    return _months_inclusive(start, end)
+
+
+def _prorated_plan(
+    db: Session, account_id: str, property_id: str, date_from: date, date_to: date
+) -> dict:
+    """Sum the flat annual budget for every year ``[date_from, date_to]`` touches, pro-rated
+    to the months of that year inside the range (annual / 12 * months-in-range-for-that-year).
+    A year with no ``property_budget`` row contributes nothing to the plan OR to
+    ``coverage_months`` — callers use ``coverage_months`` (vs. the period's total months) to
+    tell a fully-planned period from a partially- or un-planned one, instead of silently
+    treating "no budget" as a budget of $0."""
+    plan_rent = plan_opex = 0.0
+    coverage = 0
+    for year in range(date_from.year, date_to.year + 1):
+        months = _year_overlap_months(date_from, date_to, year)
+        if months == 0:
+            continue
+        row = db.execute(
+            text(
+                "SELECT b.budgeted_gross_rent, b.budgeted_operating_expenses "
+                "FROM property_budget b JOIN properties p ON p.id = b.property_id "
+                "WHERE b.property_id = :pid AND b.year = :yr AND p.account_id = :account_id"
+            ),
+            {"pid": property_id, "yr": year, "account_id": account_id},
+        ).mappings().first()
+        if row is None:
+            continue
+        plan_rent += float(row["budgeted_gross_rent"]) / 12 * months
+        plan_opex += float(row["budgeted_operating_expenses"]) / 12 * months
+        coverage += months
+    return {
+        "plan_gross_rent": plan_rent,
+        "plan_operating_expenses": plan_opex,
+        "coverage_months": coverage,
+    }
+
+
+_EMPTY_VARIANCE = {
+    "total_months": 0,
+    "plan_coverage_months": 0,
+    "actual_gross_rent": 0.0,
+    "actual_operating_expenses": 0.0,
+    "actual_noi": 0.0,
+    "plan_gross_rent": None,
+    "plan_operating_expenses": None,
+    "plan_noi": None,
+    "variance_gross_rent": None,
+    "variance_operating_expenses": None,
+    "variance_noi": None,
+    "variance_noi_pct": None,
+}
+
+
+def _variance_block(actual_rent: float, actual_opex: float, actual_noi: float, plan: dict, total_months: int) -> dict:
+    coverage = plan["coverage_months"]
+    out = {
+        **_EMPTY_VARIANCE,
+        "total_months": total_months,
+        "plan_coverage_months": coverage,
+        "actual_gross_rent": actual_rent,
+        "actual_operating_expenses": actual_opex,
+        "actual_noi": actual_noi,
+    }
+    if coverage == 0:
+        return out
+    plan_rent = plan["plan_gross_rent"]
+    plan_opex = plan["plan_operating_expenses"]
+    plan_noi = plan_rent - plan_opex
+    var_noi = actual_noi - plan_noi
+    out.update(
+        plan_gross_rent=plan_rent,
+        plan_operating_expenses=plan_opex,
+        plan_noi=plan_noi,
+        variance_gross_rent=actual_rent - plan_rent,
+        variance_operating_expenses=actual_opex - plan_opex,
+        variance_noi=var_noi,
+        variance_noi_pct=(var_noi / abs(plan_noi) * 100) if plan_noi != 0 else None,
+    )
+    return out
+
+
+def property_variance(
+    db: Session,
+    account_id: str,
+    property_id: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict | None:
+    """Actual vs. pro-rated plan for one property over a period. Returns None if the property
+    does not exist in this account; an empty-but-shaped payload if it exists but has no
+    summarized data and no explicit range was given (nothing to compare)."""
+    prop = db.execute(
+        text(
+            "SELECT id::text AS id, name FROM properties "
+            "WHERE id = :id AND account_id = :account_id"
+        ),
+        {"id": property_id, "account_id": account_id},
+    ).mappings().first()
+    if prop is None:
+        return None
+
+    date_from, date_to = _resolve_range(
+        db,
+        "property_month_summary",
+        "account_id = :account_id AND property_id = :id",
+        {"account_id": account_id, "id": property_id},
+        date_from,
+        date_to,
+    )
+    if date_to is None:
+        return {
+            "property_id": prop["id"],
+            "property_name": prop["name"],
+            "period_from": None,
+            "period_to": None,
+            **_EMPTY_VARIANCE,
+        }
+
+    actual = _period_metrics(
+        db,
+        "property_month_summary",
+        date_from,
+        date_to,
+        "account_id = :account_id AND property_id = :id",
+        {"account_id": account_id, "id": property_id},
+    )
+    actual_rent = actual["gross_rent"] if actual else 0.0
+    actual_opex = actual["operating_expenses"] if actual else 0.0
+    actual_noi = actual["noi"] if actual else 0.0
+
+    plan = _prorated_plan(db, account_id, property_id, date_from, date_to)
+    total_months = _months_inclusive(date_from, date_to)
+    return {
+        "property_id": prop["id"],
+        "property_name": prop["name"],
+        "period_from": date_from,
+        "period_to": date_to,
+        **_variance_block(actual_rent, actual_opex, actual_noi, plan, total_months),
+    }
+
+
+def portfolio_variance(
+    db: Session, account_id: str, date_from: date | None = None, date_to: date | None = None
+) -> dict:
+    """Actual vs. pro-rated plan across the portfolio, scoped to the SAME set of properties on
+    BOTH sides of the comparison: only properties with budget coverage for the period
+    contribute to the plan, AND actual NOI is summed over that identical property set (from
+    ``property_month_summary``, filtered to those ids) rather than the whole portfolio (from
+    ``portfolio_month_summary``). Mixing all-portfolio actuals against a single budgeted
+    property's plan produced a meaningless variance % (actual >> plan because the plan side
+    covered a fraction of the properties the actual side did). ``budgeted_property_count`` /
+    ``total_property_count`` report the coverage so a partially-budgeted portfolio is still
+    visibly flagged, same "be honest about partial coverage" rule as the per-property version.
+    """
+    date_from, date_to = _resolve_range(
+        db,
+        "portfolio_month_summary",
+        "account_id = :account_id",
+        {"account_id": account_id},
+        date_from,
+        date_to,
+    )
+    property_ids = db.scalars(
+        text("SELECT id::text FROM properties WHERE account_id = :account_id"),
+        {"account_id": account_id},
+    ).all()
+    if date_to is None:
+        return {
+            "period_from": None, "period_to": None, **_EMPTY_VARIANCE,
+            "budgeted_property_count": 0, "total_property_count": len(property_ids),
+        }
+
+    total_months = _months_inclusive(date_from, date_to)
+    plan_rent = plan_opex = 0.0
+    coverage_months = 0
+    budgeted_ids: list[str] = []
+    for pid in property_ids:
+        p = _prorated_plan(db, account_id, pid, date_from, date_to)
+        if p["coverage_months"] > 0:
+            plan_rent += p["plan_gross_rent"]
+            plan_opex += p["plan_operating_expenses"]
+            budgeted_ids.append(pid)
+            coverage_months = total_months  # at least one property has full/partial coverage
+
+    if budgeted_ids:
+        # Same property set as the plan side: property_month_summary filtered to the budgeted
+        # ids, summed via the multi_scope aggregation path (several properties can share a
+        # month) rather than the whole-portfolio portfolio_month_summary rollup.
+        actual = _period_metrics(
+            db, "property_month_summary", date_from, date_to,
+            "account_id = :account_id AND property_id::text = ANY(:pids)",
+            {"account_id": account_id, "pids": budgeted_ids}, multi_scope=True,
+        )
+    else:
+        actual = None
+    actual_rent = actual["gross_rent"] if actual else 0.0
+    actual_opex = actual["operating_expenses"] if actual else 0.0
+    actual_noi = actual["noi"] if actual else 0.0
+
+    plan = {"plan_gross_rent": plan_rent, "plan_operating_expenses": plan_opex, "coverage_months": coverage_months}
+    return {
+        "period_from": date_from,
+        "period_to": date_to,
+        **_variance_block(actual_rent, actual_opex, actual_noi, plan, total_months),
+        "budgeted_property_count": len(budgeted_ids),
+        "total_property_count": len(property_ids),
+    }
+
+
+# ---- Rent roll / lease-level data (migration 0012) ------------------------------------
+#
+# ``lease`` is a NEW parallel table (a unit's full tenancy history); ``contract_rent`` is
+# reference data and never feeds NOI/cash-flow, which stays driven solely by
+# monthly_records/line_items. A unit's CURRENT lease is resolved here as the lease that
+# covers today, or — absent one — the most recently started lease on file (so a unit
+# between tenants still shows its last-known tenant/status rather than nothing).
+#
+# ``lease.status`` is treated as AUTHORITATIVE for "is this unit occupied" on the rent
+# roll (the analyst report's "distinguish vacant from missing data" ask): a unit with no
+# lease row at all is reported vacant; any status other than 'vacant' (active/notice/
+# expired — a holdover tenant is still physically in the unit) counts as occupied.
+# ``missing_data`` separately flags an occupied unit with no monthly_record for the
+# property's latest summarized month — a data gap, not a real vacancy.
+_CURRENT_LEASE_CTE = """
+    current_lease AS (
+        SELECT DISTINCT ON (l.unit_id)
+            l.id, l.unit_id, l.tenant_name, l.start_date, l.end_date,
+            l.contract_rent, l.status,
+            l.security_deposit, l.escalation_pct, l.escalation_frequency_months,
+            l.lease_type, l.pct_rent_rate, l.pct_rent_breakpoint, l.concession_monthly
+        FROM lease l
+        ORDER BY l.unit_id,
+            (l.status IN ('active', 'notice')
+                AND l.start_date <= CURRENT_DATE
+                AND (l.end_date IS NULL OR l.end_date >= CURRENT_DATE)) DESC,
+            l.start_date DESC
+    )
+"""
+
+
+def _months_to_expiry(end_date: date | None, today: date) -> int | None:
+    """Whole calendar months from ``today`` to ``end_date`` (negative if already past).
+    ``None`` for a month-to-month lease (no end_date ⇒ no rollover horizon applies)."""
+    if end_date is None:
+        return None
+    months = (end_date.year - today.year) * 12 + (end_date.month - today.month)
+    if end_date.day < today.day:
+        months -= 1
+    return months
+
+
+def _add_months_preserve_day(d: date, months: int) -> date:
+    """Shift ``d`` forward by ``months``, preserving its day-of-month (clamped to the
+    target month's length) — unlike :func:`_shift_month`, which resets to the 1st (fine
+    for month-grain P&L keys, wrong for an anniversary-style escalation date)."""
+    total = d.year * 12 + (d.month - 1) + months
+    year, month = divmod(total, 12)
+    month += 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _next_escalation_date(
+    start_date: date | None,
+    frequency_months: int | None,
+    escalation_pct,
+    today: date,
+    end_date: date | None,
+) -> date | None:
+    """First scheduled-bump date on/after ``today``: ``start_date``'s anniversary shifted
+    forward by whole multiples of ``frequency_months`` (default 12) until it reaches
+    today. Null when there's no escalation on file at all (``escalation_pct`` unset) or no
+    start_date to anchor on.
+
+    Fix #3 (analyst report): also null when the computed bump date does not fall STRICTLY
+    BEFORE ``end_date`` — e.g. a 12-month fixed lease with an annual escalation has its one
+    scheduled bump land exactly ON the lease's own end date, which is illusory: the lease
+    terminates before any bump ever takes effect. A month-to-month lease (``end_date`` is
+    None) has no term boundary to check against, so its next bump is never suppressed by
+    this rule."""
+    if escalation_pct is None or start_date is None:
+        return None
+    freq = frequency_months or 12
+    candidate = start_date
+    while candidate < today:
+        candidate = _add_months_preserve_day(candidate, freq)
+    if end_date is not None and candidate >= end_date:
+        return None
+    return candidate
+
+
+# ---- Expected-vs-actual rent variance (analyst report: "connect lease economics to the
+# P&L — at minimum expected/escalated rent feeding an expected-vs-actual rent variance").
+#
+# `expected_rent` is REFERENCE data, exactly like `contract_rent` already is — it is a
+# summary of the lease's own terms over a period, computed on read here and NEVER fed into
+# NOI/cash-flow (those stay driven solely by monthly_records/line_items, unchanged by any
+# of this). "Actual" is the SAME source the rent roll already uses for a unit's rent
+# (`unit_month_summary.gross_rent`), just summed over the requested period instead of read
+# for a single latest month.
+def _month_index(d: date) -> int:
+    return d.year * 12 + d.month
+
+
+def _months_in_range(date_from: date, date_to: date) -> list[date]:
+    """Every first-of-month date from `date_from` to `date_to` inclusive (both floored to
+    the 1st, defensively — callers are expected to pass YYYY-MM-01 per the app's existing
+    period convention, same as the budget/dashboard `from`/`to` params)."""
+    a = date(date_from.year, date_from.month, 1)
+    b = date(date_to.year, date_to.month, 1)
+    n = _months_inclusive(a, b)
+    return [_shift_month(a, i) for i in range(n)] if n > 0 else []
+
+
+def _escalated_rent(contract_rent, escalation_pct, escalation_frequency_months, start_date: date, as_of_month: date) -> float:
+    """Escalated rent for one lease, as of `as_of_month` (a first-of-month date): starting
+    from `contract_rent` at `start_date`, bump by `escalation_pct` every
+    `escalation_frequency_months` FULL cadence periods elapsed since `start_date`.
+
+    E.g. a $1,000/mo lease at 3%/yr (frequency 12) starting Jan 2025: elapsed=0..11 months
+    (Jan-Dec 2025) -> 0 bumps -> $1,000; elapsed=12..23 (Jan-Dec 2026) -> 1 bump -> $1,030.
+
+    `escalation_pct` unset (NULL) means flat rent forever — this is also how a
+    month-to-month lease is priced (MTM leases are seeded with no escalation_pct at all),
+    satisfying "MTM uses current contract rent" directly: there is only ever the one
+    `contract_rent` figure, which IS the current rent.
+
+    Passing the lease's own `end_date` as `as_of_month` (instead of the month actually
+    being priced) freezes the calculation at whatever the rent was when the lease's term
+    ended — used for holdover months (see `_unit_expected_actual`), so a lapsed lease's
+    expected rent doesn't keep silently escalating after it's off-contract.
+    """
+    base = float(contract_rent)
+    if escalation_pct is None:
+        return base
+    freq = escalation_frequency_months or 12
+    elapsed = _month_index(as_of_month) - _month_index(start_date)
+    if elapsed < 0:
+        elapsed = 0
+    n_bumps = elapsed // freq
+    if n_bumps <= 0:
+        return base
+    return base * ((1 + float(escalation_pct) / 100) ** n_bumps)
+
+
+def _unit_expected_actual(leases: list[dict], actual_by_month: dict[date, float], months: list[date]) -> tuple[float, float]:
+    """Sum of expected + actual rent for ONE unit across `months`, given its FULL lease
+    history (any order) and its actual gross rent by month (only months on file).
+
+    Expected and actual are summed over the SAME month set: the intersection of {months a
+    lease basis is in force} and {months that have an actual record on file}. In other
+    words, only months where the unit was on a lease (or in holdover) AND we have a
+    statement count toward BOTH totals — so the two legs of the variance are always
+    like-for-like. This is deliberate: summing actual over every month in the requested
+    period while expected only covers lease months produced garbage at every mid-period
+    lease boundary (a unit whose lease started mid-window showed a full period of actuals
+    against a few months of expected). Months with a lease but no record (missing data),
+    or a record but no lease basis (e.g. before the first lease on file), are dropped from
+    both sides.
+
+    Per-month governing lease: the lease (if any) whose [start_date, end_date] covers that
+    month — ties (overlapping leases, not expected in practice) broken toward the
+    most-recently-started one, mirroring `_CURRENT_LEASE_CTE`'s own tie-break. A month with
+    NO lease in force contributes nothing UNLESS it's a HOLDOVER: the unit's most recent
+    past lease has lapsed (`end_date` in the past) but actual rent is still being collected
+    that month — then expected freezes at that lease's rent as of its own end_date (no
+    further escalation accrues once the contract is off-term). This mirrors the point-in-time
+    `holdover` flag in `_rent_roll_row`, applied per-month instead of just to "today".
+    """
+    ordered = sorted(leases, key=lambda l: _month_index(l["start_date"]), reverse=True)
+    total_expected = 0.0
+    total_actual = 0.0
+    for m in months:
+        # Only months with an actual record on file are eligible (the actuals leg of the
+        # intersection); a missing month contributes to neither total.
+        if m not in actual_by_month:
+            continue
+        actual = actual_by_month[m]
+        m_idx = _month_index(m)
+        governing = next(
+            (
+                l for l in ordered
+                if _month_index(l["start_date"]) <= m_idx
+                and (l["end_date"] is None or _month_index(l["end_date"]) >= m_idx)
+            ),
+            None,
+        )
+        if governing is not None:
+            expected = _escalated_rent(
+                governing["contract_rent"], governing["escalation_pct"],
+                governing["escalation_frequency_months"], governing["start_date"], m,
+            )
+        else:
+            prev = next((l for l in ordered if _month_index(l["start_date"]) <= m_idx), None)
+            if prev is not None and prev["end_date"] is not None and actual > 0:
+                # Holdover: lapsed lease, rent still collected → expected frozen at term end.
+                expected = _escalated_rent(
+                    prev["contract_rent"], prev["escalation_pct"],
+                    prev["escalation_frequency_months"], prev["start_date"], prev["end_date"],
+                )
+            else:
+                # Record exists but no lease basis in force (e.g. pre-first-lease months) —
+                # not part of the lease∩actuals intersection, so skip both legs.
+                continue
+        total_expected += expected
+        total_actual += actual
+    return total_expected, total_actual
+
+
+def _resolve_rent_variance_period(
+    db: Session, unit_scope_where: str, params: dict, date_from: date | None, date_to: date | None
+) -> tuple[date | None, date | None]:
+    """Default the rent-variance window the same way every other period-aware endpoint
+    does (see `_resolve_range`): an unspecified `date_to` is the latest month with ANY
+    actual rent data on file for this scope (property or tag-filtered portfolio), and an
+    unspecified `date_from` defaults to that same month (a single-month window). Returns
+    `(None, None)` when the scope has no unit-month data at all yet."""
+    if date_to is None:
+        date_to = db.execute(
+            text(
+                f"""
+                SELECT max(ums.month) FROM unit_month_summary ums
+                JOIN units u ON u.id = ums.unit_id
+                JOIN properties p ON p.id = u.property_id
+                WHERE {unit_scope_where}
+                """
+            ),
+            params,
+        ).scalar()
+    if date_to is None:
+        return None, None
+    if date_from is None:
+        date_from = date_to
+    return date_from, date_to
+
+
+def _rent_variance_for_units(
+    db: Session, account_id: str, unit_ids: list[str], date_from: date, date_to: date
+) -> dict[str, dict]:
+    """Expected vs. actual rent per unit, summed over [date_from, date_to] — the numbers
+    behind the rent-roll's `expected_rent`/`period_actual_rent`/`variance` fields. Every ID
+    in `unit_ids` gets an entry (zeros when the unit has neither lease nor actual data in
+    range) so callers can merge with a plain dict lookup."""
+    months = _months_in_range(date_from, date_to)
+    result: dict[str, dict] = {}
+    if not unit_ids or not months:
+        for unit_id in unit_ids:
+            result[unit_id] = {
+                "expected_rent": 0.0, "period_actual_rent": 0.0, "variance": 0.0, "variance_pct": None,
+            }
+        return result
+
+    lease_rows = _rows(
+        db.execute(
+            text(
+                "SELECT l.unit_id::text AS unit_id, l.start_date, l.end_date, l.contract_rent, "
+                "l.escalation_pct, l.escalation_frequency_months FROM lease l "
+                "JOIN units u ON u.id = l.unit_id "
+                "JOIN properties p ON p.id = u.property_id "
+                "WHERE l.unit_id::text = ANY(:unit_ids) AND p.account_id = :account_id"
+            ),
+            {"unit_ids": unit_ids, "account_id": account_id},
+        )
+    )
+    actual_rows = _rows(
+        db.execute(
+            text(
+                "SELECT unit_id::text AS unit_id, month, gross_rent FROM unit_month_summary "
+                "WHERE unit_id::text = ANY(:unit_ids) AND account_id = :account_id "
+                "AND month BETWEEN :f AND :t"
+            ),
+            {
+                "unit_ids": unit_ids,
+                "account_id": account_id,
+                "f": months[0],
+                "t": months[-1],
+            },
+        )
+    )
+
+    leases_by_unit: dict[str, list[dict]] = {}
+    for r in lease_rows:
+        leases_by_unit.setdefault(r["unit_id"], []).append(r)
+    actual_by_unit: dict[str, dict[date, float]] = {}
+    for r in actual_rows:
+        actual_by_unit.setdefault(r["unit_id"], {})[r["month"]] = float(r["gross_rent"])
+
+    for unit_id in unit_ids:
+        expected, actual = _unit_expected_actual(
+            leases_by_unit.get(unit_id, []), actual_by_unit.get(unit_id, {}), months
+        )
+        variance = actual - expected
+        result[unit_id] = {
+            "expected_rent": expected,
+            "period_actual_rent": actual,
+            "variance": variance,
+            # Already ×100 (a percent, e.g. -1.4 for -1.4%), matching the budget feature's
+            # `variance_noi_pct` convention so the two variance surfaces agree. NULL when
+            # there's no expected basis to divide by.
+            "variance_pct": (variance / expected * 100) if expected else None,
+        }
+    return result
+
+
+def _rent_variance_rollup(rows: list[dict]) -> dict:
+    """Property/portfolio rollup: total expected vs. actual rent over the period, and the
+    $ / % variance. Excludes shell/synthetic units (same exclusion, and for the same
+    reason, as `_occupancy_summary` — e.g. Cedar Plaza Retail's shell unit has no actual
+    rent of its own to compare against; it would otherwise show up as a phantom 100%
+    shortfall)."""
+    real = [r for r in rows if not r.get("is_shell") and r.get("expected_rent") is not None]
+    total_expected = sum(r["expected_rent"] for r in real)
+    total_actual = sum(r["period_actual_rent"] for r in real)
+    variance = total_actual - total_expected
+    return {
+        "total_expected_rent": total_expected,
+        "total_actual_rent": total_actual,
+        "variance": variance,
+        # Already ×100 (percent), matching `variance_noi_pct` / the per-unit field above.
+        "variance_pct": (variance / total_expected * 100) if total_expected else None,
+        "unit_count": len(real),
+    }
+
+
+def _rent_roll_row(row: dict, today: date) -> dict:
+    has_lease = row["lease_status"] is not None
+    status = row["lease_status"] if has_lease else "vacant"
+    occupied = status != "vacant"
+    actual_rent = row["actual_rent"]
+    contract_rent = row["contract_rent"]
+    lease_end = row["lease_end"]
+
+    # Holdover (analyst report ask): a lapsed lease (end_date in the past, status
+    # 'expired' — current_lease already guarantees no newer lease has taken over, since
+    # it's the DISTINCT ON winner) whose unit still has a recent actual rent record on
+    # file — the tenant is still there and paying, just off-contract. Distinct from both a
+    # clean active lease and a true vacancy; still counts "occupied" (status is unchanged).
+    holdover = (
+        status == "expired"
+        and lease_end is not None
+        and lease_end < today
+        and actual_rent is not None
+        and actual_rent > 0
+    )
+
+    # Vacancy downtime: days since the PRIOR lease's end_date, for vacant rows only — a
+    # unit with no lease on file at all (has_lease False) has no end_date to count from.
+    vacant_days = (today - lease_end).days if (not occupied and lease_end is not None) else None
+
+    return {
+        "unit_id": row["unit_id"],
+        "unit_number": row["unit_number"],
+        "label": row["label"],
+        # Migration 0014: internal-only flag (not part of the public RentRollRow schema —
+        # pydantic silently drops unknown dict keys on serialization) consumed by
+        # `_occupancy_summary` to exclude synthetic/shell units from its aggregates. Still
+        # kept in the ROW itself so a shell unit's lease (e.g. Cedar Plaza Retail's
+        # percentage-rent terms) stays visible in the rent-roll table.
+        "is_shell": bool(row["is_shell"]),
+        "property_id": row["property_id"],
+        "property_name": row["property_name"],
+        "lease_id": row["lease_id"],
+        # A vacant unit's PRIOR tenant is not a current tenancy — presenting that name as
+        # if it were an active tenant is misleading (fix #3), so null it out here. The
+        # unit's contract_rent is DELIBERATELY kept (for both occupied and vacant rows):
+        # it's the reference "potential rent" figure the GPR-based economic occupancy
+        # calc needs (see _occupancy_summary) and the UI surfaces it as "asking rent" for
+        # a vacant row rather than implying there's a live lease.
+        "tenant_name": row["tenant_name"] if occupied else None,
+        "lease_start": row["lease_start"],
+        "lease_end": lease_end,
+        "contract_rent": float(contract_rent) if contract_rent is not None else None,
+        "status": status,
+        "actual_rent": float(actual_rent) if actual_rent is not None else None,
+        "actual_month": row["actual_month"],
+        # An occupied unit (per the lease) with no recorded rent for the latest month is a
+        # DATA GAP, not a vacancy — the whole point of keeping lease state separate from
+        # monthly_records presence (see migration 0011's is_vacant flag for the same split
+        # one level down, at the monthly-record grain).
+        "missing_data": occupied and actual_rent is None,
+        # A vacant unit has no current lease TERM to roll over — a "months to expiry"
+        # figure there would just be the prior tenant's stale end date read as if it were
+        # an upcoming/overdue expiration (fix #3). Only meaningful for occupied units.
+        "months_to_expiry": _months_to_expiry(lease_end, today) if occupied else None,
+        "security_deposit": float(row["security_deposit"]) if row["security_deposit"] is not None else None,
+        "escalation_pct": float(row["escalation_pct"]) if row["escalation_pct"] is not None else None,
+        "escalation_frequency_months": row["escalation_frequency_months"] if has_lease else None,
+        "next_escalation_date": _next_escalation_date(
+            row["lease_start"], row["escalation_frequency_months"], row["escalation_pct"], today, lease_end
+        ),
+        "lease_type": row["lease_type"] if has_lease else None,
+        "holdover": holdover,
+        "vacant_days": vacant_days,
+        "pct_rent_rate": float(row["pct_rent_rate"]) if row["pct_rent_rate"] is not None else None,
+        "pct_rent_breakpoint": (
+            float(row["pct_rent_breakpoint"]) if row["pct_rent_breakpoint"] is not None else None
+        ),
+        # The unit's own market_rent (migration 0015) — waterfall-followups item 1.
+        # Independent of lease/status; admin-editable via `PATCH /units/{id}`.
+        "market_rent": float(row["market_rent"]) if row["market_rent"] is not None else None,
+        # Standing $/month concession (migration 0016) on the CURRENT lease, if any — null
+        # when there's no lease on file at all, or the lease has no concession.
+        "concession_monthly": (
+            float(row["concession_monthly"]) if row["concession_monthly"] is not None else None
+        ),
+        # Filled in by property_rent_roll/portfolio_rent_roll (needs the whole unit list +
+        # the resolved period first) via `_rent_variance_for_units`. Left as None here so
+        # the dict shape is complete even if that merge step is ever skipped.
+        "expected_rent": None,
+        "period_actual_rent": None,
+        "variance": None,
+        "variance_pct": None,
+    }
+
+
+def _avg_contract_rent_by_property(rows: list[dict]) -> dict[str, float]:
+    """Average contract rent among a property's OCCUPIED units — the market-rent proxy
+    used for Gross Potential Rent (see ``_occupancy_summary``) when a vacant unit has
+    never had a lease on file at all, so there's no asking/prior rent of its own to use."""
+    sums: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    for r in rows:
+        if r["status"] != "vacant" and r["contract_rent"] is not None:
+            sums[r["property_id"]] = sums.get(r["property_id"], 0.0) + r["contract_rent"]
+            counts[r["property_id"]] = counts.get(r["property_id"], 0) + 1
+    return {pid: sums[pid] / counts[pid] for pid in sums}
+
+
+def _occupancy_summary(rows: list[dict]) -> dict:
+    """Physical occupancy (unit count) + two DIFFERENT rent-based ratios, kept under
+    clearly separate names (analyst-report fix #1):
+
+    - ``economic_occupancy`` = Σ (actual collected rent, capped per-unit at that unit's own
+      contract rent) ÷ Gross Potential Rent (GPR), where GPR is the full "every unit
+      rented" ceiling — occupied units' contract rent PLUS vacant units' potential rent
+      (the property's current average in-place contract rent, falling back to the vacant
+      unit's own last-known/asking rent only when there's no occupied comparable at all).
+      This is genuine economic occupancy: it captures vacancy loss, so it comes in AT OR
+      BELOW physical occupancy whenever there's vacancy, and never exceeds ~100% — never
+      because vacant units were silently excluded from the denominator. The per-unit cap
+      on the numerator (verified against live data) matters here: without it, a handful of
+      units collecting slightly ABOVE their own contract rent (fees, a bump not yet
+      re-papered — see ``rent_realization`` below, ~100.1% on this data) can, combined with
+      a small vacant sample, push the ratio a hair above physical occupancy on a pure
+      collections technicality unrelated to vacancy — capping keeps the metric strictly
+      about occupancy/vacancy, not collections variance.
+    - ``rent_realization`` = Σ actual ÷ Σ contract rent, over OCCUPIED units with both
+      figures on file. This is the metric the endpoint used to mislabel "economic
+      occupancy": it structurally excludes vacant units from the denominator, so it can
+      read ABOVE both physical occupancy and 100% — it says nothing about vacancy loss,
+      only about how actual collections compare to contract rent for tenants already in
+      place (a collections/loss-to-lease style signal, not an occupancy metric).
+
+    Synthetic/shell units (analyst report fix #1 — e.g. Cedar Plaza Retail's ``RETAIL``
+    unit, planted only to hang a percentage-rent lease off a unit-less property) are
+    EXCLUDED here entirely: they have no monthly_records/unit_month_summary of their own,
+    so they'd otherwise show up as a phantom occupied unit with contract rent but no actual
+    rent, inflating ``total_units`` and dragging ``economic_occupancy`` down on a fictional
+    vacancy-loss signal. They still appear in the rent-roll ROWS list (so the lease terms
+    stay visible/editable) — only this aggregate is scoped to real, physical units.
+    """
+    rows = [r for r in rows if not r.get("is_shell")]
+    total = len(rows)
+    occupied_rows = [r for r in rows if r["status"] != "vacant"]
+    occupied = len(occupied_rows)
+
+    by_property_avg = _avg_contract_rent_by_property(rows)
+    occupied_contract_sum = sum(r["contract_rent"] for r in occupied_rows if r["contract_rent"] is not None)
+    occupied_contract_n = sum(1 for r in occupied_rows if r["contract_rent"] is not None)
+    portfolio_avg_rent = (occupied_contract_sum / occupied_contract_n) if occupied_contract_n else None
+
+    gpr_total = 0.0
+    gpr_known = 0
+    for r in rows:
+        if r["status"] != "vacant":
+            potential = r["contract_rent"]
+        else:
+            # Deliberately prefer the property's CURRENT average in-place rent over the
+            # vacant unit's own (possibly stale/below-market) last-known contract_rent: a
+            # unit that's been sitting vacant since an old, lower-rent lease would
+            # otherwise understate GPR and could push economic occupancy above physical
+            # occupancy — exactly the bug this fix corrects. Fall back to the vacant
+            # unit's own contract_rent only if there's no occupied comparable at all
+            # (property- or portfolio-wide) to average.
+            potential = by_property_avg.get(r["property_id"])
+            if potential is None:
+                potential = portfolio_avg_rent
+            if potential is None:
+                potential = r["contract_rent"]
+        if potential is not None:
+            gpr_total += potential
+            gpr_known += 1
+
+    # Capped at each unit's own contract rent: a unit collecting slightly MORE than its
+    # contract (fees, a rent bump not yet re-papered, etc.) is still just ONE fully-
+    # occupied unit, not "more than 100% occupied" — letting overage flow through
+    # uncapped would let a handful of over-collecting units mask real vacancy loss
+    # elsewhere and push economic occupancy above physical occupancy purely on a
+    # collections technicality (verified against this app's own seed data — see the
+    # rent-roll fixes changelog). The UNCAPPED actual/contract ratio is exactly what
+    # `rent_realization` below reports instead, so that signal isn't lost.
+    econ_actual = sum(
+        min(r["actual_rent"], r["contract_rent"]) if r["contract_rent"] is not None else r["actual_rent"]
+        for r in occupied_rows
+        if r["actual_rent"] is not None
+    )
+
+    realization_rows = [r for r in occupied_rows if r["actual_rent"] is not None and r["contract_rent"]]
+    realization_actual = sum(r["actual_rent"] for r in realization_rows)
+    realization_contract = sum(r["contract_rent"] for r in realization_rows)
+
+    # Average downtime: vacant rows with a known `vacant_days` (i.e. the unit has SOME
+    # lease history to count from — a never-leased unit has no end_date to anchor on).
+    vacant_day_values = [r["vacant_days"] for r in rows if r["status"] == "vacant" and r["vacant_days"] is not None]
+    avg_vacant_days = (sum(vacant_day_values) / len(vacant_day_values)) if vacant_day_values else None
+
+    return {
+        "total_units": total,
+        "occupied_units": occupied,
+        "physical_occupancy": (occupied / total) if total else None,
+        "gross_potential_rent": gpr_total if gpr_known else None,
+        "economic_occupancy": (econ_actual / gpr_total) if gpr_total else None,
+        "rent_realization": (realization_actual / realization_contract) if realization_contract else None,
+        "avg_vacant_days": avg_vacant_days,
+    }
+
+
+def _rent_roll_sql(where: str) -> str:
+    return f"""
+        WITH {_CURRENT_LEASE_CTE},
+        latest_month AS (
+            -- Deliberately sourced from unit_month_summary (has real unit-level data),
+            -- NOT property_month_summary: a property-tier-only record with no unit rows
+            -- posted for that month (e.g. a draft period touched but never filled in)
+            -- would otherwise anchor "latest month" on a month with zero unit data,
+            -- making every unit look like a data gap even when its actual history is fine.
+            SELECT property_id, max(month) AS month
+            FROM unit_month_summary
+            GROUP BY property_id
+        )
+        SELECT
+            u.id::text AS unit_id, u.unit_number, u.label, u.is_shell, u.market_rent,
+            p.id::text AS property_id, p.name AS property_name,
+            cl.id::text AS lease_id, cl.tenant_name, cl.start_date AS lease_start,
+            cl.end_date AS lease_end, cl.contract_rent, cl.status AS lease_status,
+            cl.security_deposit, cl.escalation_pct, cl.escalation_frequency_months,
+            cl.lease_type, cl.pct_rent_rate, cl.pct_rent_breakpoint, cl.concession_monthly,
+            lm.month AS actual_month, ums.gross_rent AS actual_rent
+        FROM units u
+        JOIN properties p ON p.id = u.property_id
+        LEFT JOIN current_lease cl ON cl.unit_id = u.id
+        LEFT JOIN latest_month lm ON lm.property_id = u.property_id
+        LEFT JOIN unit_month_summary ums ON ums.unit_id = u.id AND ums.month = lm.month
+        WHERE {where}
+        ORDER BY p.name, u.unit_number
+    """
+
+
+def _apply_rent_variance(
+    db: Session, account_id: str, out_rows: list[dict], unit_scope_where: str, params: dict,
+    date_from: date | None, date_to: date | None,
+) -> tuple[date | None, date | None, dict]:
+    """Shared by property_rent_roll/portfolio_rent_roll: resolve the variance window
+    (default: latest month with actual data, single-month — same convention as
+    `_resolve_range`), compute expected/actual/variance per unit, merge the per-unit
+    figures into each row IN PLACE, and return the resolved window + the rollup."""
+    period_from, period_to = _resolve_rent_variance_period(db, unit_scope_where, params, date_from, date_to)
+    if period_to is None:
+        rollup = _rent_variance_rollup(out_rows)  # all None `expected_rent` -> zeros, unit_count 0
+        return None, None, rollup
+    by_unit = _rent_variance_for_units(
+        db, account_id, [r["unit_id"] for r in out_rows], period_from, period_to
+    )
+    for row in out_rows:
+        # Shell/synthetic units (e.g. Cedar Plaza Retail's placeholder) have no actual
+        # unit-month records of their own — their rent books at the property tier — so any
+        # expected-vs-actual comparison is meaningless. Leave the variance fields null so
+        # the row renders "—" instead of a phantom shortfall, and keep them out of the
+        # rollup (already excluded in `_rent_variance_rollup`).
+        if row.get("is_shell"):
+            continue
+        v = by_unit.get(row["unit_id"])
+        if v is not None:
+            row.update(v)
+    return period_from, period_to, _rent_variance_rollup(out_rows)
+
+
+def property_rent_roll(
+    db: Session,
+    account_id: str,
+    property_id: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict:
+    """Rent roll for one property: one row per unit with lease + actual rent + rollover
+    horizon, plus a physical/economic occupancy summary derived from lease status, plus
+    expected-vs-actual rent variance (reference data — see `_rent_variance_for_units`) for
+    the given/default period."""
+    today = date.today()
+    scope_where = "u.property_id = :pid AND p.account_id = :account_id"
+    params = {"pid": property_id, "account_id": account_id}
+    rows = _rows(db.execute(text(_rent_roll_sql(scope_where)), params))
+    out_rows = [_rent_roll_row(r, today) for r in rows]
+    period_from, period_to, rent_variance = _apply_rent_variance(
+        db, account_id, out_rows, scope_where, params, date_from, date_to
+    )
+    return {
+        "property_id": property_id, "as_of": today, "rows": out_rows, "occupancy": _occupancy_summary(out_rows),
+        "period_from": period_from, "period_to": period_to, "rent_variance": rent_variance,
+    }
+
+
+def portfolio_rent_roll(
+    db: Session,
+    account_id: str,
+    tags: list[str] | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict:
+    """Portfolio-wide rent roll across every multifamily unit. ``tags`` optionally scopes
+    to properties carrying ANY of the given tags (OR semantics). Also computes
+    expected-vs-actual rent variance for the given/default period, honoring the same tag
+    filter on both sides (numerator and denominator scoped to the same property set)."""
+    today = date.today()
+    scope_where = f"p.account_id = :account_id AND {_tag_where('p.id')}"
+    params = {"account_id": account_id, "tags": tags}
+    rows = _rows(db.execute(text(_rent_roll_sql(scope_where)), params))
+    out_rows = [_rent_roll_row(r, today) for r in rows]
+    period_from, period_to, rent_variance = _apply_rent_variance(
+        db, account_id, out_rows, scope_where, params, date_from, date_to
+    )
+    return {
+        "property_id": None, "as_of": today, "rows": out_rows, "occupancy": _occupancy_summary(out_rows),
+        "period_from": period_from, "period_to": period_to, "rent_variance": rent_variance,
+    }
+
+
+def lease_expirations(
+    db: Session, account_id: str, within_months: int, tags: list[str] | None = None
+) -> dict:
+    """Leases expiring within ``within_months`` of today, soonest first — the rollover
+    horizon. Only 'active'/'notice' leases with a fixed end_date qualify: month-to-month
+    leases (no end_date) never roll over, and an already-'expired'/'vacant' lease's
+    end_date is in the past, not an upcoming expiration (a lapsed-holdover feed is a
+    different concern from this one). ``tags`` optionally scopes to properties carrying
+    ANY of the given tags (OR semantics)."""
+    today = date.today()
+    cutoff = today + timedelta(days=within_months * 30)
+    sql = f"""
+        WITH {_CURRENT_LEASE_CTE}
+        SELECT
+            u.id::text AS unit_id, u.unit_number, u.label,
+            p.id::text AS property_id, p.name AS property_name,
+            cl.tenant_name, cl.end_date AS lease_end, cl.contract_rent
+        FROM current_lease cl
+        JOIN units u ON u.id = cl.unit_id
+        JOIN properties p ON p.id = u.property_id
+        WHERE cl.end_date IS NOT NULL
+          AND cl.status IN ('active', 'notice')
+          AND cl.end_date BETWEEN :today AND :cutoff
+          AND p.account_id = :account_id
+          AND {_tag_where("p.id")}
+        ORDER BY cl.end_date ASC, p.name, u.unit_number
+    """
+    rows = _rows(
+        db.execute(
+            text(sql),
+            {"today": today, "cutoff": cutoff, "tags": tags, "account_id": account_id},
+        )
+    )
+    for r in rows:
+        r["contract_rent"] = float(r["contract_rent"])
+        r["months_to_expiry"] = _months_to_expiry(r["lease_end"], today)
+
+    # Rollup fields (analyst report fix #2): what fraction of in-place portfolio rent is
+    # exposed to rollover in this window. The denominator is total in-place contract rent
+    # across every CURRENTLY occupied unit (any non-'vacant' lease status), honoring the
+    # same ``tags`` filter as the numerator so a tag-filtered call stays internally
+    # consistent (both sides scoped to the same property set).
+    total_contract_rent_expiring = sum(r["contract_rent"] for r in rows)
+    in_place_sql = f"""
+        WITH {_CURRENT_LEASE_CTE}
+        SELECT COALESCE(SUM(cl.contract_rent), 0) AS total
+        FROM current_lease cl
+        JOIN units u ON u.id = cl.unit_id
+        JOIN properties p ON p.id = u.property_id
+        WHERE cl.status != 'vacant'
+          AND p.account_id = :account_id
+          AND {_tag_where("p.id")}
+    """
+    total_portfolio_rent = float(
+        db.execute(text(in_place_sql), {"tags": tags, "account_id": account_id}).scalar() or 0
+    )
+    pct_of_portfolio_rent = (
+        (total_contract_rent_expiring / total_portfolio_rent) if total_portfolio_rent else None
+    )
+    return {
+        "within_months": within_months,
+        "as_of": today,
+        "items": rows,
+        "total_contract_rent_expiring": total_contract_rent_expiring,
+        "pct_of_portfolio_rent": pct_of_portfolio_rent,
+    }
+
+
+# ---- Rent waterfall (migration 0015: units.market_rent) -------------------------------
+#
+# Decomposes the gap between Gross Potential Rent (every real unit priced at market) and
+# actual collected rent into the standard CRE bridge: GPR -> loss-to-lease -> vacancy loss
+# -> collections loss (& concessions) -> actual collected. `market_rent` is reference data,
+# exactly like `contract_rent`/`is_shell` before it — it never feeds NOI/cash-flow.
+#
+# BASIS (analyst-reviewed rework, option (a) — see rent-waterfall-rework-changelog.md): the
+# waterfall is computed over EVERY unit-month in the period, for every real unit, driven by
+# LEASE STATUS — never gated on whether an actual record happens to be on file. This is a
+# deliberate change from the earlier {lease-in-force-or-holdover} ∩ {actual-on-file}
+# intersection basis (which is still what the SEPARATE rent-variance feature,
+# `_unit_expected_actual`, uses): that intersection silently dropped any unit-month lacking
+# either leg, so a unit's genuine vacancy (lease lapsed, nothing collected, so naturally no
+# actual record) was invisible to it, and `actual_collected` under-counted whenever lease
+# coverage had gaps. Root cause of those gaps (leases anchored to a today-relative date that
+# drifts away from this seed's fixed 2024-2025 actuals window) is fixed at the source in
+# `app/seed.py`/`scripts/reanchor_lease_timeline.py` — with that fix, this function now sees
+# a governing-or-vacant classification for essentially every unit-month, and:
+#   - `actual_collected` sums `unit_month_summary.gross_rent` (0 if no record) over EVERY
+#     unit-month in scope, so it reconciles exactly to the unit-tier P&L gross rent for the
+#     same scope/period (see `property_rent_waterfall`/`portfolio_rent_waterfall`).
+#   - `vacancy_loss` populates for real lease-gap vacancies (e.g. Maple Court unit 105).
+#
+# Waterfall-followups item 3: `collections_loss` is further split into `concessions` (a
+# leasing decision — the governing lease's `concession_monthly`, migration 0016) and
+# `bad_debt` (the remainder — delinquency). See `_unit_waterfall`'s docstring for the
+# per-month capping rule that keeps `concessions + bad_debt == collections_loss` exact.
+def _unit_waterfall(
+    leases: list[dict], actual_by_month: dict[date, float], months: list[date], market_rent: float | None
+) -> dict:
+    """One unit's waterfall components, summed across `months`. `market_rent` is this
+    unit's GPR figure (None — a unit with no `market_rent` on file — contributes nothing,
+    same "unknown, don't guess" stance as `_occupancy_summary`'s GPR gaps).
+
+    Every month in `months` is classified as either OCCUPIED (a governing lease, or a
+    holdover — same resolution/freeze rule as `_unit_expected_actual`) or VACANT (no lease
+    in force, no holdover) — there is no third "dropped" case; `actual` defaults to 0 for a
+    month with no `unit_month_summary` record on file. This is what keeps the identity exact
+    by construction:
+      - occupied month: `gpr - loss_to_lease - collections_loss` = `market_rent -
+        (market_rent - scheduled) - (scheduled - actual)` = `actual`.
+      - vacant month: `gpr - vacancy_loss` = `market_rent - market_rent` = `0`. The identity
+        only holds here if `actual` is also 0 — true whenever lease coverage is continuous
+        (item 1's fix): a month classified vacant has no lease basis (or a lapsed one with
+        nothing collected), so there is nothing to have paid.
+
+    Concessions (item 3): for each OCCUPIED month, the governing (or, for a holdover, the
+    lapsed) lease's `concession_monthly` is attributed as that month's `concessions`
+    contribution, CAPPED at `max(0, scheduled - actual)` — the month's own shortfall. This
+    never manufactures a loss that wasn't already there (a lease with a concession but no
+    real shortfall that month contributes $0) and keeps `concessions <= collections_loss`
+    per month, so the remainder (`bad_debt`, computed by the caller as `collections_loss -
+    concessions`) never needs its own separate accumulation — it falls out of the same
+    per-month arithmetic automatically. No vacant-month contribution: a vacant unit has no
+    lease-granted concession to speak of.
+    """
+    empty = {
+        "gpr": 0.0, "loss_to_lease": 0.0, "vacancy_loss": 0.0,
+        "collections_loss": 0.0, "concessions": 0.0, "actual_collected": 0.0,
+    }
+    if market_rent is None:
+        return empty
+    ordered = sorted(leases, key=lambda l: _month_index(l["start_date"]), reverse=True)
+    out = dict(empty)
+    for m in months:
+        actual = actual_by_month.get(m, 0.0)
+        m_idx = _month_index(m)
+        governing = next(
+            (
+                l for l in ordered
+                if _month_index(l["start_date"]) <= m_idx
+                and (l["end_date"] is None or _month_index(l["end_date"]) >= m_idx)
+            ),
+            None,
+        )
+        if governing is not None:
+            scheduled = _escalated_rent(
+                governing["contract_rent"], governing["escalation_pct"],
+                governing["escalation_frequency_months"], governing["start_date"], m,
+            )
+            concession_monthly = float(governing.get("concession_monthly") or 0.0)
+        else:
+            prev = next((l for l in ordered if _month_index(l["start_date"]) <= m_idx), None)
+            if prev is not None and prev["end_date"] is not None and actual > 0:
+                # Holdover: lapsed lease, rent still collected -> occupied, frozen rent.
+                scheduled = _escalated_rent(
+                    prev["contract_rent"], prev["escalation_pct"],
+                    prev["escalation_frequency_months"], prev["start_date"], prev["end_date"],
+                )
+                concession_monthly = float(prev.get("concession_monthly") or 0.0)
+            else:
+                # Vacant: no lease in force, and either no prior lease at all, or a lapsed
+                # one with nothing collected this month (a genuine between-tenant gap).
+                out["gpr"] += market_rent
+                out["vacancy_loss"] += market_rent
+                out["actual_collected"] += actual
+                continue
+        out["gpr"] += market_rent
+        out["loss_to_lease"] += market_rent - scheduled
+        out["collections_loss"] += scheduled - actual
+        out["concessions"] += min(concession_monthly, max(0.0, scheduled - actual))
+        out["actual_collected"] += actual
+    return out
+
+
+_WATERFALL_KEYS = (
+    "gpr", "loss_to_lease", "vacancy_loss", "collections_loss", "concessions", "actual_collected",
+)
+# Every bridge line EXCEPT gpr itself gets a %-of-GPR figure (rework item 4, extended by
+# item 3 to cover the concessions/bad_debt split) — IC reads a rent bridge as "loss-to-lease
+# X%, vacancy Y%, concessions Z%, bad debt W%" at least as often as in raw dollars. Computed
+# on read, purely derived (component / gpr); no schema/migration needed.
+_WATERFALL_PCT_KEYS = (
+    "loss_to_lease", "vacancy_loss", "collections_loss", "concessions", "bad_debt", "actual_collected",
+)
+
+
+def _sum_waterfall(components: list[dict]) -> dict:
+    """Sum a list of per-unit (or per-property, for single-asset properties — see
+    `_single_asset_property_components`) waterfall dicts into one totals block, plus
+    `residual` — the identity's balance check (`gpr - loss_to_lease - vacancy_loss -
+    collections_loss - actual_collected`), which should be ~0 to the cent by construction
+    (see `_unit_waterfall`'s docstring); returned explicitly so callers/tests/curl can
+    verify it rather than trusting the math blindly. Also computes each line's %-of-GPR
+    (`<line>_pct_of_gpr`; null when `gpr` is 0 — nothing to divide by, not "0%").
+
+    `bad_debt` (waterfall-followups item 3) is NOT one of `_WATERFALL_KEYS` — it's not
+    accumulated per-unit in `_unit_waterfall`, it's derived HERE as `collections_loss -
+    concessions` after summing. This is mathematically identical to summing a per-unit
+    `bad_debt` (both `collections_loss` and `concessions` are themselves per-month-capped
+    sums, and subtraction distributes over a sum), so `concessions + bad_debt ==
+    collections_loss` holds exactly at every level (unit/property/portfolio) without
+    needing a second accumulator threaded through `_unit_waterfall`."""
+    totals = {k: sum(c[k] for c in components) for k in _WATERFALL_KEYS}
+    totals["bad_debt"] = totals["collections_loss"] - totals["concessions"]
+    totals["residual"] = (
+        totals["gpr"] - totals["loss_to_lease"] - totals["vacancy_loss"]
+        - totals["collections_loss"] - totals["actual_collected"]
+    )
+    gpr = totals["gpr"]
+    for k in _WATERFALL_PCT_KEYS:
+        totals[f"{k}_pct_of_gpr"] = (totals[k] / gpr) if gpr else None
+    return totals
+
+
+def _rent_waterfall_units(db: Session, unit_scope_where: str, params: dict) -> list[dict]:
+    """Real (non-shell) units in scope, with their `market_rent`, owning property's
+    id/name (for the portfolio endpoint's per-property breakdown), and `unit_number`/
+    `label` (for the property endpoint's per-unit drill-down — waterfall-followups item
+    4)."""
+    sql = f"""
+        SELECT u.id::text AS unit_id, u.property_id::text AS property_id,
+               p.name AS property_name, u.market_rent, u.unit_number, u.label
+        FROM units u
+        JOIN properties p ON p.id = u.property_id
+        WHERE NOT u.is_shell AND {unit_scope_where}
+    """
+    return _rows(db.execute(text(sql), params))
+
+
+def _rent_waterfall_for_units(
+    db: Session, account_id: str, units: list[dict], date_from: date, date_to: date
+) -> dict[str, dict]:
+    """Per-unit waterfall components (see `_unit_waterfall`) for every unit in `units`
+    (each needs `unit_id`/`market_rent`), over `[date_from, date_to]`. Every unit gets an
+    entry (all-zero when it has no `market_rent` on file, or no data in range) so callers
+    can merge with a plain dict lookup."""
+    months = _months_in_range(date_from, date_to)
+    unit_ids = [u["unit_id"] for u in units]
+    empty = {
+        "gpr": 0.0, "loss_to_lease": 0.0, "vacancy_loss": 0.0,
+        "collections_loss": 0.0, "concessions": 0.0, "actual_collected": 0.0,
+    }
+    if not unit_ids or not months:
+        return {u["unit_id"]: dict(empty) for u in units}
+
+    lease_rows = _rows(
+        db.execute(
+            text(
+                "SELECT l.unit_id::text AS unit_id, l.start_date, l.end_date, l.contract_rent, "
+                "l.escalation_pct, l.escalation_frequency_months, l.concession_monthly "
+                "FROM lease l "
+                "JOIN units u ON u.id = l.unit_id "
+                "JOIN properties p ON p.id = u.property_id "
+                "WHERE l.unit_id::text = ANY(:unit_ids) AND p.account_id = :account_id"
+            ),
+            {"unit_ids": unit_ids, "account_id": account_id},
+        )
+    )
+    actual_rows = _rows(
+        db.execute(
+            text(
+                "SELECT unit_id::text AS unit_id, month, gross_rent FROM unit_month_summary "
+                "WHERE unit_id::text = ANY(:unit_ids) AND account_id = :account_id "
+                "AND month BETWEEN :f AND :t"
+            ),
+            {
+                "unit_ids": unit_ids,
+                "account_id": account_id,
+                "f": months[0],
+                "t": months[-1],
+            },
+        )
+    )
+
+    leases_by_unit: dict[str, list[dict]] = {}
+    for r in lease_rows:
+        leases_by_unit.setdefault(r["unit_id"], []).append(r)
+    actual_by_unit: dict[str, dict[date, float]] = {}
+    for r in actual_rows:
+        actual_by_unit.setdefault(r["unit_id"], {})[r["month"]] = float(r["gross_rent"])
+
+    result: dict[str, dict] = {}
+    for u in units:
+        mr = float(u["market_rent"]) if u["market_rent"] is not None else None
+        result[u["unit_id"]] = _unit_waterfall(
+            leases_by_unit.get(u["unit_id"], []), actual_by_unit.get(u["unit_id"], {}), months, mr
+        )
+    return result
+
+
+def _single_asset_property_components(
+    db: Session, account_id: str, prop_where: str, params: dict, date_from: date, date_to: date
+) -> list[dict]:
+    """Single-asset properties (`properties.type = 'single'` — Cedar Plaza Retail + the
+    house properties) have no units: they book rent directly at the property tier, and
+    `PropertyMonthSummary.gross_rent` for them already IS the property's total rent (that
+    model aggregates unit rows AND the property-tier row — see its docstring — but a
+    single-asset property has only the latter). Rework item 3: without folding these in,
+    the portfolio waterfall's `actual_collected` structurally excludes 3 of 18 properties
+    and can never reconcile to portfolio P&L gross rent.
+
+    Modeled as a simple pass-through leg (documented choice, not a placeholder): GPR =
+    actual, no loss_to_lease/vacancy_loss/collections_loss split — there is no unit-level
+    lease/market-rent basis on a unitless property to decompose one from. (Cedar Plaza
+    Retail does carry a percentage-rent lease with a `contract_rent`, hung off a shell unit
+    purely for that lease to exist on — see `app/seed.py`'s `_retail_lease_plan` — but that
+    unit is excluded from every unit-level aggregate via `is_shell`, by design, so it's not
+    reused as a decomposition basis here either; keeping ALL single-asset properties on one
+    consistent, simple model beats a one-off exception for just this one.) Every property
+    matching `prop_where` (alias `p`, `properties` table) gets an entry, `actual=0` when it
+    has no `property_month_summary` rows in `[date_from, date_to]` (e.g. an investment
+    property acquired after the period) — never silently dropped."""
+    sql = f"""
+        SELECT p.id::text AS property_id, p.name AS property_name,
+               COALESCE(SUM(pms.gross_rent), 0) AS actual
+        FROM properties p
+        LEFT JOIN property_month_summary pms
+               ON pms.property_id = p.id AND pms.month BETWEEN :f AND :t
+        WHERE p.type = 'single' AND p.account_id = :account_id AND {prop_where}
+        GROUP BY p.id, p.name
+    """
+    rows = _rows(
+        db.execute(
+            text(sql), {**params, "account_id": account_id, "f": date_from, "t": date_to}
+        )
+    )
+    out = []
+    for r in rows:
+        actual = float(r["actual"])
+        out.append({
+            "property_id": r["property_id"], "property_name": r["property_name"],
+            "gpr": actual, "loss_to_lease": 0.0, "vacancy_loss": 0.0,
+            "collections_loss": 0.0, "concessions": 0.0, "actual_collected": actual,
+        })
+    return out
+
+
+def property_rent_waterfall(
+    db: Session,
+    account_id: str,
+    property_id: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict | None:
+    """Rent waterfall (GPR -> loss-to-lease -> vacancy loss -> collections loss & conces-
+    sions -> actual collected) for one property over the given/default period. Returns
+    None if the property does not exist. Shell/synthetic units excluded (same exclusion,
+    same reason, as the rent roll/occupancy summary). A single-asset property (no units —
+    rework item 3) gets the simple property-tier pass-through leg instead — see
+    `_single_asset_property_components`."""
+    prop = db.execute(
+        text(
+            "SELECT id::text AS id, name, type FROM properties "
+            "WHERE id = :id AND account_id = :account_id"
+        ),
+        {"id": property_id, "account_id": account_id},
+    ).mappings().first()
+    if prop is None:
+        return None
+
+    if prop["type"] == "single":
+        date_from, date_to = _resolve_range(
+            db,
+            "property_month_summary",
+            "account_id = :account_id AND property_id = :pid",
+            {"account_id": account_id, "pid": property_id},
+            date_from,
+            date_to,
+        )
+        if date_to is None:
+            return {
+                "property_id": prop["id"], "property_name": prop["name"],
+                "period_from": None, "period_to": None, "unit_count": 0,
+                **_sum_waterfall([]), "units": [],
+            }
+        comps = _single_asset_property_components(
+            db, account_id, "p.id = :pid", {"pid": property_id}, date_from, date_to
+        )
+        return {
+            "property_id": prop["id"], "property_name": prop["name"],
+            "period_from": date_from, "period_to": date_to, "unit_count": 0,
+            **_sum_waterfall(comps), "units": [],
+        }
+
+    unit_scope_where = "u.property_id = :pid AND p.account_id = :account_id"
+    unit_scope_params = {"pid": property_id, "account_id": account_id}
+    date_from, date_to = _resolve_rent_variance_period(
+        db, unit_scope_where, unit_scope_params, date_from, date_to
+    )
+    units = _rent_waterfall_units(db, unit_scope_where, unit_scope_params)
+    if date_to is None:
+        return {
+            "property_id": prop["id"], "property_name": prop["name"],
+            "period_from": None, "period_to": None, "unit_count": 0,
+            **_sum_waterfall([]), "units": [],
+        }
+    by_unit = _rent_waterfall_for_units(db, account_id, units, date_from, date_to)
+    # Per-unit drill-down (waterfall-followups item 4, optional): the SAME per-unit
+    # components already computed above for the property total, just surfaced individually
+    # instead of only summed — so `units` sums exactly to this response's own totals block,
+    # the same "parts sum to the whole" guarantee `portfolio_rent_waterfall.properties` has.
+    # Ranked by total rent leakage (loss-to-lease + vacancy + collections), biggest first,
+    # same convention as the portfolio endpoint's per-property ranking.
+    unit_rows = [
+        {"unit_id": u["unit_id"], "unit_number": u["unit_number"], "label": u["label"],
+         **_sum_waterfall([by_unit[u["unit_id"]]])}
+        for u in units
+    ]
+    unit_rows.sort(
+        key=lambda r: r["loss_to_lease"] + r["vacancy_loss"] + r["collections_loss"], reverse=True
+    )
+    return {
+        "property_id": prop["id"], "property_name": prop["name"],
+        "period_from": date_from, "period_to": date_to, "unit_count": len(units),
+        **_sum_waterfall(list(by_unit.values())), "units": unit_rows,
+    }
+
+
+def portfolio_rent_waterfall(
+    db: Session,
+    account_id: str,
+    tags: list[str] | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict:
+    """Portfolio-wide rent waterfall, honoring the same tag filter (OR semantics) as every
+    other portfolio-scoped endpoint, PLUS a per-property breakdown so an analyst can rank
+    which assets carry the most vacancy loss / loss-to-lease / collections loss rather than
+    just seeing the blended total. Each property's own components sum exactly to the
+    portfolio total (verified live — see the changelog). Includes the 3 single-asset
+    properties (rework item 3 — see `_single_asset_property_components`) alongside the 15
+    multifamily properties' unit-level breakdown, so `actual_collected` reconciles to
+    portfolio P&L gross rent rather than structurally excluding them."""
+    where = f"p.account_id = :account_id AND {_tag_where('p.id')}"
+    params: dict = {"account_id": account_id, "tags": tags}
+    date_from, date_to = _resolve_rent_variance_period(db, where, params, date_from, date_to)
+    if date_to is None:
+        # No multifamily unit data in scope — a tag filter matching ONLY single-asset
+        # properties would otherwise return empty even though those properties have real
+        # property-tier rent. Fall back to resolving the period from property_month_summary.
+        date_from, date_to = _resolve_range(
+            db, "property_month_summary",
+            f"account_id = :account_id "
+            f"AND property_id IN (SELECT p.id FROM properties p WHERE {where})",
+            params, date_from, date_to,
+        )
+    units = _rent_waterfall_units(db, where, params)
+    if date_to is None:
+        return {
+            "period_from": None, "period_to": None, "unit_count": 0,
+            **_sum_waterfall([]), "properties": [],
+        }
+    by_unit = _rent_waterfall_for_units(db, account_id, units, date_from, date_to)
+
+    by_property: dict[str, list[dict]] = {}
+    property_names: dict[str, str] = {}
+    for u in units:
+        by_property.setdefault(u["property_id"], []).append(by_unit[u["unit_id"]])
+        property_names[u["property_id"]] = u["property_name"]
+    properties = [
+        {
+            "property_id": pid, "property_name": property_names[pid], "unit_count": len(comps),
+            **_sum_waterfall(comps),
+        }
+        for pid, comps in by_property.items()
+    ]
+
+    single_components = _single_asset_property_components(
+        db, account_id, where, params, date_from, date_to
+    )
+    properties += [
+        {
+            "property_id": c["property_id"], "property_name": c["property_name"], "unit_count": 0,
+            **_sum_waterfall([c]),
+        }
+        for c in single_components
+    ]
+    properties.sort(key=lambda r: r["property_name"])
+
+    return {
+        "period_from": date_from, "period_to": date_to, "unit_count": len(units),
+        **_sum_waterfall(list(by_unit.values()) + single_components),
+        "properties": properties,
     }

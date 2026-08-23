@@ -30,11 +30,25 @@ admin_token = login("admin@example.com", "admin12345")
 r = client.get("/portfolio/monthly", headers={"Authorization": f"Bearer {admin_token}"})
 assert r.status_code == 200, r.text
 print("   GET /portfolio/monthly ->", len(r.json()), "months")
-jan = r.json()[0]
-print("   2026-01 NOI =", jan["noi"], " cash_flow =", jan["cash_flow"])
+first = r.json()[0]
+print(f"   {first['month']} NOI =", first["noi"], " cash_flow =", first["cash_flow"])
 
 print("\n2) ADMIN UNLOCK + AUDIT LOG ----------------------------------------")
 maple = db.scalar(select(Property).where(Property.name == "Maple Court Apartments"))
+# Lock a month HERE rather than expecting the seed to leave one locked: the seed posts
+# every property-month but locks none, so this used to depend on state it never created.
+# Locking through the API also exercises PUT /periods on the way in.
+target_month = db.scalar(
+    text("SELECT max(month)::text FROM monthly_records WHERE property_id = :pid"),
+    {"pid": maple.id},
+)
+r_lock = client.put(
+    "/periods",
+    headers={"Authorization": f"Bearer {admin_token}"},
+    json={"property_id": maple.id, "month": target_month, "status": "locked"},
+)
+assert r_lock.status_code == 200, r_lock.text
+db.expire_all()
 locked = db.scalar(
     select(PeriodStatus).where(
         PeriodStatus.property_id == maple.id, PeriodStatus.status == "locked"
@@ -52,7 +66,16 @@ assert len(audits) == 1
 
 print("\n3) NON-ADMIN FORBIDDEN ---------------------------------------------")
 if not db.scalar(select(User).where(User.email == "member@example.com")):
-    db.add(User(email="member@example.com", hashed_password=hash_password("member12345"), role="member"))
+    # Multi-tenancy (migration 0017): a user belongs to an account. Put the member in the
+    # SAME account as the seed admin — the point of this check is role separation
+    # (member cannot unlock), which is only meaningful within one account.
+    admin_row = db.scalar(select(User).where(User.email == "admin@example.com"))
+    db.add(User(
+        account_id=admin_row.account_id,
+        email="member@example.com",
+        hashed_password=hash_password("member12345"),
+        role="member",
+    ))
     db.commit()
 # lock another period to attempt unlock as member
 other = db.scalar(select(PeriodStatus).where(PeriodStatus.status == "posted"))
@@ -66,16 +89,34 @@ other.status = "posted"
 db.commit()
 
 print("\n4) RECLASSIFY CATEGORY -> NOI RECOMPUTES, NO MIGRATION -------------")
-before = client.get("/portfolio/monthly", headers={"Authorization": f"Bearer {admin_token}"}).json()[0]
-roof = db.scalar(select(Category).where(Category.name == "Roof Replacement"))
+before_all = client.get("/portfolio/monthly", headers={"Authorization": f"Bearer {admin_token}"}).json()
+# Pick a month that actually carries capex, and remember its figures — the invariant under
+# test is "moving a capex category above the NOI line reduces that month's NOI by exactly
+# the capex", which holds whatever the seed's calendar and dollar amounts happen to be.
+# (This block used to hard-code Feb-2026 and $7,555/$8,000 from an older seed.)
+m_before = next((x for x in before_all if float(x["capex"]) > 0), None)
+assert m_before is not None, "no month with capex — seed fixture changed"
+RECLASS_MONTH = m_before["month"]
+noi_before, capex_before = float(m_before["noi"]), float(m_before["capex"])
+
+# Per-account categories (migration 0017): scope the lookup to the admin's own account,
+# or a second account's identically-named category could be picked up instead.
+admin_row = db.scalar(select(User).where(User.email == "admin@example.com"))
+roof = db.scalar(
+    select(Category).where(
+        Category.name == "Roof Replacement",
+        Category.account_id == admin_row.account_id,
+    )
+)
 roof.default_classification = "operating"  # move capex ABOVE the NOI line
 db.commit()
 after = client.get("/portfolio/monthly", headers={"Authorization": f"Bearer {admin_token}"}).json()
-feb_before = before  # jan has no roof capex; check Feb where the $8000 capex lives
-feb_after = next(x for x in after if x["month"] == "2026-02-01")
+feb_after = next(x for x in after if x["month"] == RECLASS_MONTH)
 print("   reclassified 'Roof Replacement' capex -> operating (no DDL/migration)")
-print("   2026-02 NOI: 7555.00 (capex below) -> ", feb_after["noi"], "(now operating, inside NOI)")
-assert float(feb_after["noi"]) == 7555.00 - 8000.00
+print(f"   {RECLASS_MONTH} NOI: {noi_before:,.2f} (capex below) -> {float(feb_after['noi']):,.2f} "
+      f"(now operating, inside NOI); capex was {capex_before:,.2f}")
+assert abs(float(feb_after["noi"]) - (noi_before - capex_before)) < 0.01
+assert float(feb_after["capex"]) == 0.0
 roof.default_classification = "capex"  # restore
 db.commit()
 

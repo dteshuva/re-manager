@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   deleteRecord,
+  getMe,
   listCategories,
   listPeriods,
   listProperties,
@@ -15,6 +16,7 @@ import {
   type Property,
   type Unit,
 } from "../api";
+import PropertySearchSelect from "../components/PropertySearchSelect";
 
 // `id` is a stable client-side key (backend line item id when loaded, a fresh uuid for a
 // row added in this session) — never the array index, so deleting/reordering rows can't
@@ -39,11 +41,16 @@ export default function Entry({ token }: { token: string }) {
 
   const [rows, setRows] = useState<Row[]>([]);
   const [notes, setNotes] = useState("");
+  const [isVacant, setIsVacant] = useState(false);
   const [recordId, setRecordId] = useState<string | null>(null);
   const [period, setPeriod] = useState<PeriodStatus | null>(null);
 
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The "Unlock (admin)" action is server-gated (403 for non-admins), but a member should
+  // never see a button that only fails after a round-trip — resolve the current user's role
+  // the same way AttentionSettings/AuditLogSection do and hide the button client-side too.
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const month = `${monthStr}-01`;
   const property = properties.find((p) => p.id === propertyId);
@@ -53,6 +60,7 @@ export default function Entry({ token }: { token: string }) {
     let cancelled = false;
     listProperties(token).then((r) => !cancelled && setProperties(r)).catch((e) => !cancelled && setError(e.message));
     listCategories(token, true).then((r) => !cancelled && setCategories(r)).catch((e) => !cancelled && setError(e.message));
+    getMe(token).then((m) => !cancelled && setIsAdmin(m.role === "admin")).catch(() => !cancelled && setIsAdmin(false));
     return () => {
       cancelled = true;
     };
@@ -87,6 +95,7 @@ export default function Entry({ token }: { token: string }) {
         const rec = recs.find((r) => r.unit_id === unitId) ?? null;
         setRecordId(rec?.id ?? null);
         setNotes(rec?.notes ?? "");
+        setIsVacant(rec?.is_vacant ?? false);
         setRows(
           rec && rec.line_items.length
             ? rec.line_items.map((li) => ({ id: li.id, category_id: li.category_id, amount: String(li.amount) }))
@@ -126,6 +135,7 @@ export default function Entry({ token }: { token: string }) {
         unit_id: scope || null,
         month,
         notes: notes || null,
+        is_vacant: scope ? isVacant : false,
         line_items,
       });
       setRecordId(rec.id);
@@ -158,17 +168,12 @@ export default function Entry({ token }: { token: string }) {
   return (
     <section>
       <div className="card" style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", padding: "14px 18px", marginBottom: 18 }}>
-        <label className="stack">
-          Property
-          <select className="select" value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
-            <option value="">— select —</option>
-            {properties.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <PropertySearchSelect
+          properties={properties}
+          value={propertyId}
+          onChange={setPropertyId}
+          placeholder="— select —"
+        />
         <label className="stack">
           Scope
           <select
@@ -204,6 +209,21 @@ export default function Entry({ token }: { token: string }) {
             <p className="alert-error" style={{ background: "var(--warn-soft)", borderColor: "#f3d6c5", color: "#9a3412" }}>
               🔒 This month is locked. Edits are disabled — an admin must unlock it.
             </p>
+          )}
+
+          {scope && (
+            <label className="row" style={{ gap: 8, marginBottom: 12, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={isVacant}
+                disabled={locked}
+                onChange={(e) => setIsVacant(e.target.checked)}
+              />
+              Mark this unit as vacant this month
+              <span className="muted" style={{ fontSize: 12 }}>
+                (explicit — distinct from simply not posting a record; $0 rent either way)
+              </span>
+            </label>
           )}
 
           <div className="card" style={{ padding: 0, maxWidth: 640, overflow: "hidden" }}>
@@ -310,7 +330,7 @@ export default function Entry({ token }: { token: string }) {
             <button className="btn" disabled={locked} onClick={() => changeStatus("locked")}>
               Lock
             </button>
-            {locked && (
+            {locked && isAdmin && (
               <button className="btn" onClick={unlock}>
                 Unlock (admin)
               </button>

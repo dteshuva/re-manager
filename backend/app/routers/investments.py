@@ -10,39 +10,34 @@ from sqlalchemy.orm import Session
 
 from app import queries
 from app.db import get_db
-from app.deps import get_current_user
-from app.models import Property, PropertyInvestment, User
+from app.deps import Scope, get_scope
+from app.models import PropertyInvestment
 from app.schemas import (
     InvestmentMetrics,
     PortfolioInvestment,
     PropertyInvestmentIn,
     PropertyInvestmentOut,
 )
+from app.scoping import get_property_or_404
 
 router = APIRouter(tags=["investments"])
 
 
-def _get_property_or_404(db: Session, property_id: str) -> Property:
-    prop = db.get(Property, property_id)
-    if prop is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Property not found")
-    return prop
-
 
 @router.get("/investments", response_model=PortfolioInvestment)
 def portfolio_investment(
-    db: Session = Depends(get_db), _u: User = Depends(get_current_user)
+    db: Session = Depends(get_db), scope: Scope = Depends(get_scope)
 ):
     """Every property with investment inputs + value-weighted portfolio aggregates."""
-    return queries.portfolio_investment(db)
+    return queries.portfolio_investment(db, scope.account_id)
 
 
 @router.get("/properties/{property_id}/investment/metrics", response_model=InvestmentMetrics)
 def property_investment_metrics(
-    property_id: str, db: Session = Depends(get_db), _u: User = Depends(get_current_user)
+    property_id: str, db: Session = Depends(get_db), scope: Scope = Depends(get_scope)
 ):
     """One property's acquisition inputs + computed return metrics (nulls if no inputs yet)."""
-    result = queries.investment_metrics(db, property_id)
+    result = queries.investment_metrics(db, scope.account_id, property_id)
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Property not found")
     return result
@@ -53,10 +48,10 @@ def upsert_property_investment(
     property_id: str,
     payload: PropertyInvestmentIn,
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
     """Create or replace a property's acquisition inputs."""
-    _get_property_or_404(db, property_id)
+    get_property_or_404(db, scope, property_id)
     inv = db.get(PropertyInvestment, property_id)
     if inv is None:
         inv = PropertyInvestment(property_id=property_id, **payload.model_dump())
@@ -71,9 +66,10 @@ def upsert_property_investment(
 
 @router.delete("/properties/{property_id}/investment", status_code=status.HTTP_204_NO_CONTENT)
 def delete_property_investment(
-    property_id: str, db: Session = Depends(get_db), _u: User = Depends(get_current_user)
+    property_id: str, db: Session = Depends(get_db), scope: Scope = Depends(get_scope)
 ):
     """Clear a property's acquisition inputs (metrics become unavailable)."""
+    get_property_or_404(db, scope, property_id)
     inv = db.get(PropertyInvestment, property_id)
     if inv is not None:
         db.delete(inv)

@@ -5,14 +5,19 @@ from app.config import get_settings
 from app.routers import (
     audit,
     auth,
+    budgets,
     categories,
+    compliance,
+    exports,
     imports,
     investments,
+    leases,
     periods,
     portfolio,
     properties,
     records,
     settings as settings_router,
+    tags,
     units,
 )
 
@@ -47,6 +52,11 @@ app.include_router(imports.router)
 app.include_router(investments.router)
 app.include_router(settings_router.router)
 app.include_router(audit.router)
+app.include_router(budgets.router)
+app.include_router(tags.router)
+app.include_router(exports.router)
+app.include_router(leases.router)
+app.include_router(compliance.router)
 
 
 @app.get("/health", tags=["meta"])

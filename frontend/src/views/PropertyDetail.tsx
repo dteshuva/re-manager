@@ -1,39 +1,57 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
+  exportPropertyMonthly,
+  exportPropertyVariance,
   getPropertyAttention,
   getPropertyDashboard,
   getPropertyMonthly,
   getPropertyUnitsMonthly,
+  getPropertyVariance,
   getUnitRoster,
   listProperties,
   type AttentionFeed as AttentionFeedType,
+  type ExportFormat,
   type PeriodRange,
   type PnLMetrics,
   type Property,
   type PropertyDashboard,
   type PropertyMonthlyPnL,
+  type PropertyVariance,
   type UnitMonthlyPnL,
   type UnitRoster,
 } from "../api";
 import AttentionFeed from "../components/AttentionFeed";
+import ExportControl from "../components/ExportControl";
 import InvestmentPanel from "../components/InvestmentPanel";
 import KpiBand from "../components/KpiBand";
 import PeriodSelector from "../components/PeriodSelector";
 import PnlTrendChart from "../components/PnlTrendChart";
+import PropertySearchSelect from "../components/PropertySearchSelect";
 import UnitDetail from "../components/UnitDetail";
 import { clickableProps } from "../hooks/clickable";
-import { fmtCurrency, fmtMonth, isYoyComparison } from "../ui";
+import { fmtCurrency, fmtMonth, isYoyComparison, leaseStatusPillClass, statusPillClass } from "../ui";
 
 const ROSTER_PAGE = 25;
 
 // Level 2 — Property detail. Top-down: a scoped KPI band + property-scoped attention feed
 // + a server-paginated/sortable unit roster (all from the rollups), then the month-by-month
 // P&L with the honest unit-vs-property-tier split.
-export default function PropertyDetail({ token }: { token: string }) {
+export default function PropertyDetail({
+  token,
+  initialPropertyId,
+  onConsumeInitial,
+}: {
+  token: string;
+  // Set by a cross-tab nudge (e.g. Investments' "missing acquisition data" prompt) to land
+  // here pre-selected to a specific property instead of the default first-in-list.
+  initialPropertyId?: string | null;
+  onConsumeInitial?: () => void;
+}) {
   const [properties, setProperties] = useState<Property[]>([]);
   const [propertyId, setPropertyId] = useState("");
   const [allMonths, setAllMonths] = useState<string[]>([]);
   const [dashboard, setDashboard] = useState<PropertyDashboard | null>(null);
+  const [variance, setVariance] = useState<PropertyVariance | null>(null);
   const [feed, setFeed] = useState<AttentionFeedType | null>(null);
   const [roster, setRoster] = useState<UnitRoster | null>(null);
   const [sort, setSort] = useState("unit_number");
@@ -63,13 +81,25 @@ export default function PropertyDetail({ token }: { token: string }) {
       .then((ps) => {
         if (cancelled) return;
         setProperties(ps);
-        setPropertyId((cur) => cur || (ps[0]?.id ?? ""));
+        setPropertyId((cur) => cur || initialPropertyId || (ps[0]?.id ?? ""));
+        if (initialPropertyId) onConsumeInitial?.();
       })
       .catch((e) => !cancelled && setError(e.message));
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  // A nudge (Investments' "missing acquisition data" prompt) can set initialPropertyId
+  // after properties are already loaded — jump to it and consume the signal once.
+  useEffect(() => {
+    if (initialPropertyId) {
+      setPropertyId(initialPropertyId);
+      onConsumeInitial?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPropertyId]);
 
   // Discover the property's months; reset per-property view state.
   useEffect(() => {
@@ -95,6 +125,7 @@ export default function PropertyDetail({ token }: { token: string }) {
     if (!propertyId) return;
     let cancelled = false;
     getPropertyDashboard(token, propertyId, range).then((d) => !cancelled && setDashboard(d)).catch((e) => !cancelled && setError(e.message));
+    getPropertyVariance(token, propertyId, range).then((v) => !cancelled && setVariance(v)).catch((e) => !cancelled && setError(e.message));
     getPropertyAttention(token, propertyId, range).then((f) => !cancelled && setFeed(f)).catch((e) => !cancelled && setError(e.message));
     return () => {
       cancelled = true;
@@ -139,6 +170,26 @@ export default function PropertyDetail({ token }: { token: string }) {
     return m;
   }, [unitRows]);
 
+  // Export always downloads the CURRENTLY-VIEWED property + period range.
+  const exportReports = useMemo(
+    () =>
+      propertyId
+        ? [
+            {
+              value: "monthly",
+              label: "Monthly P&L",
+              onExport: (format: ExportFormat) => exportPropertyMonthly(token, propertyId, range, format),
+            },
+            {
+              value: "variance",
+              label: "Variance vs budget",
+              onExport: (format: ExportFormat) => exportPropertyVariance(token, propertyId, range, format),
+            },
+          ]
+        : [],
+    [token, propertyId, range],
+  );
+
   const onSort = (col: string) => {
     setOffset(0);
     if (col === sort) setOrder((o) => (o === "asc" ? "desc" : "asc"));
@@ -153,18 +204,18 @@ export default function PropertyDetail({ token }: { token: string }) {
     <section>
       {error && <p className="alert-error">{error}</p>}
 
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
-        <label className="row" style={{ gap: 8 }}>
-          Property
-          <select className="select" value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
-            {properties.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.type})
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+        <PropertySearchSelect
+          properties={properties}
+          value={propertyId}
+          onChange={setPropertyId}
+          wrapperStyle={{ minWidth: 220 }}
+        />
         <PeriodSelector key={propertyId} availableMonths={allMonths} onChange={setRange} defaultMode="month" />
+      </div>
+
+      <div className="row" style={{ justifyContent: "flex-end", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+        <ExportControl reports={exportReports} idPrefix="property-detail" />
       </div>
 
       {dashboard && (
@@ -180,7 +231,7 @@ export default function PropertyDetail({ token }: { token: string }) {
         </p>
       )}
 
-      {dashboard && <KpiBand data={dashboard} />}
+      {dashboard && <KpiBand data={dashboard} variance={variance} />}
 
       {propertyId && <InvestmentPanel token={token} propertyId={propertyId} />}
 
@@ -197,13 +248,16 @@ export default function PropertyDetail({ token }: { token: string }) {
           <h3 className="section-title">Unit roster</h3>
           <p className="hint">
             {roster.total} units · showing {roster.rows.length} (page {Math.floor(offset / ROSTER_PAGE) + 1}
-            {" "}of {Math.max(1, Math.ceil(roster.total / ROSTER_PAGE))}). Click a header to sort.
+            {" "}of {Math.max(1, Math.ceil(roster.total / ROSTER_PAGE))}). Click a header to sort. "Lease" is the
+            unit's current lease state (today) — a separate, live signal from the month's record-driven
+            "Status" column; see the Rent Roll tab for full lease detail.
           </p>
           <table className="data-table">
             <thead>
               <tr>
                 <th className="is-clickable" onClick={() => onSort("unit_number")}>Unit{sortArrow("unit_number")}</th>
                 <th className="is-clickable" onClick={() => onSort("status")}>Status{sortArrow("status")}</th>
+                <th>Lease</th>
                 <th className="is-clickable" onClick={() => onSort("gross_rent")}>Rent{sortArrow("gross_rent")}</th>
                 <th className="is-clickable" onClick={() => onSort("noi")}>NOI{sortArrow("noi")}</th>
                 <th className="is-clickable" onClick={() => onSort("cash_flow")}>Cash Flow{sortArrow("cash_flow")}</th>
@@ -218,9 +272,10 @@ export default function PropertyDetail({ token }: { token: string }) {
                     {u.label ? ` — ${u.label}` : ""}
                   </td>
                   <td>
-                    <span className={`pill ${u.status === "vacant" ? "pill--vacant" : "pill--occupied"}`}>
-                      {u.status}
-                    </span>
+                    <span className={statusPillClass(u.status)}>{u.status}</span>
+                  </td>
+                  <td>
+                    <span className={leaseStatusPillClass(u.lease_status ?? "vacant")}>{u.lease_status ?? "vacant"}</span>
                   </td>
                   <td>{fmtCurrency(u.gross_rent)}</td>
                   <td>{fmtCurrency(u.noi)}</td>

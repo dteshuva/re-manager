@@ -1,13 +1,13 @@
 """CRUD for properties and their units."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import get_current_user
-from app.models import Property, Unit, User
+from app.deps import Scope, get_scope
+from app.models import Property, Unit
 from app.schemas import (
     PropertyCreate,
     PropertyOut,
@@ -16,29 +16,37 @@ from app.schemas import (
     UnitOut,
     UnitUpdate,
 )
+from app.scoping import get_property_or_404
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 
 
-def get_property_or_404(db: Session, property_id: str) -> Property:
-    prop = db.get(Property, property_id)
-    if prop is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Property not found")
-    return prop
-
-
 @router.get("", response_model=list[PropertyOut])
-def list_properties(db: Session = Depends(get_db), _u: User = Depends(get_current_user)):
-    return db.scalars(select(Property).order_by(Property.name)).all()
+def list_properties(
+    q: str | None = Query(
+        default=None, description="Case-insensitive filter on property name/address"
+    ),
+    db: Session = Depends(get_db),
+    scope: Scope = Depends(get_scope),
+):
+    stmt = (
+        select(Property)
+        .where(Property.account_id == scope.account_id)
+        .order_by(Property.name)
+    )
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.where(or_(Property.name.ilike(pattern), Property.address.ilike(pattern)))
+    return db.scalars(stmt).all()
 
 
 @router.post("", response_model=PropertyOut, status_code=status.HTTP_201_CREATED)
 def create_property(
     payload: PropertyCreate,
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
-    prop = Property(**payload.model_dump())
+    prop = Property(account_id=scope.account_id, **payload.model_dump())
     db.add(prop)
     db.commit()
     db.refresh(prop)
@@ -47,9 +55,9 @@ def create_property(
 
 @router.get("/{property_id}", response_model=PropertyOut)
 def get_property(
-    property_id: str, db: Session = Depends(get_db), _u: User = Depends(get_current_user)
+    property_id: str, db: Session = Depends(get_db), scope: Scope = Depends(get_scope)
 ):
-    return get_property_or_404(db, property_id)
+    return get_property_or_404(db, scope, property_id)
 
 
 @router.patch("/{property_id}", response_model=PropertyOut)
@@ -57,9 +65,9 @@ def update_property(
     property_id: str,
     payload: PropertyUpdate,
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
-    prop = get_property_or_404(db, property_id)
+    prop = get_property_or_404(db, scope, property_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(prop, field, value)
     db.commit()
@@ -69,19 +77,19 @@ def update_property(
 
 @router.delete("/{property_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_property(
-    property_id: str, db: Session = Depends(get_db), _u: User = Depends(get_current_user)
+    property_id: str, db: Session = Depends(get_db), scope: Scope = Depends(get_scope)
 ):
     # Cascades remove units, monthly_records, line_items, and period_status.
-    db.delete(get_property_or_404(db, property_id))
+    db.delete(get_property_or_404(db, scope, property_id))
     db.commit()
 
 
 # ---- Units nested under a property ----
 @router.get("/{property_id}/units", response_model=list[UnitOut])
 def list_units(
-    property_id: str, db: Session = Depends(get_db), _u: User = Depends(get_current_user)
+    property_id: str, db: Session = Depends(get_db), scope: Scope = Depends(get_scope)
 ):
-    get_property_or_404(db, property_id)
+    get_property_or_404(db, scope, property_id)
     return db.scalars(
         select(Unit).where(Unit.property_id == property_id).order_by(Unit.unit_number)
     ).all()
@@ -94,9 +102,9 @@ def create_unit(
     property_id: str,
     payload: UnitCreate,
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
-    prop = get_property_or_404(db, property_id)
+    prop = get_property_or_404(db, scope, property_id)
     if prop.type != "multifamily":
         raise HTTPException(
             status.HTTP_409_CONFLICT,

@@ -3,8 +3,24 @@
 // these inline-style objects mirror it for views that haven't moved to classes yet.
 import type { CSSProperties } from "react";
 
+// Account display currency. It's an account-wide setting (see backend migration 0019), so a
+// module-level value that App sets once from `/auth/me` lets every fmtCurrency call site stay
+// unchanged — no prop drilling / context through the ~13 views that format money. USD → $,
+// GBP → £; the locale switches with it so grouping/placement read natively.
+type CurrencyCode = "USD" | "GBP";
+const CURRENCY_LOCALE: Record<CurrencyCode, string> = { USD: "en-US", GBP: "en-GB" };
+let activeCurrency: CurrencyCode = "USD";
+
+export const setActiveCurrency = (code: string) => {
+  activeCurrency = code === "GBP" ? "GBP" : "USD";
+};
+
 export const fmtCurrency = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  n.toLocaleString(CURRENCY_LOCALE[activeCurrency], {
+    style: "currency",
+    currency: activeCurrency,
+    maximumFractionDigits: 0,
+  });
 
 export const fmtMonth = (iso: string) =>
   new Date(iso + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "short" });
@@ -15,6 +31,43 @@ export const fmtDateTime = (iso: string) =>
 
 // A fraction (0.062) as a percent ("6.2%"). For rates like cap rate / cash-on-cash.
 export const fmtPct = (frac: number, digits = 1) => `${(frac * 100).toFixed(digits)}%`;
+
+// Unit-month status pill class: "occupied" | "vacant" (a record was posted, $0 rent) |
+// "missing" (no record posted at all — distinct from a real vacancy, see migration 0011).
+export const statusPillClass = (status: string) =>
+  `pill pill--${status === "occupied" ? "occupied" : status === "missing" ? "missing" : "vacant"}`;
+
+// Lease status pill class (rent roll): "active" (green) | "notice" (amber — tenant is
+// vacating soon, reuses the "missing" pill's warn color) | "expired" (a lapsed, unrenewed
+// contract) | "vacant" (no lease on file) — the latter two both reuse the "vacant" pill's
+// negative color since both mean "this lease isn't currently in good standing."
+export const leaseStatusPillClass = (status: string) =>
+  `pill pill--${status === "active" ? "occupied" : status === "notice" ? "missing" : "vacant"}`;
+
+export const fmtDate = (iso: string) =>
+  new Date(iso + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+
+// Compliance certificate status pill class: "valid" (green) | "expiring" (amber — within the
+// alert window, renew now) | "expired" (red). Reuses the roster pill colors.
+export const certStatusPillClass = (status: string) =>
+  `pill pill--${status === "valid" ? "occupied" : status === "expiring" ? "missing" : "vacant"}`;
+
+// Human label for a certificate's days-to-expiry: "expired 12d ago" / "expires in 30d" / "due today".
+export const fmtDaysToExpiry = (days: number) => {
+  if (days < 0) return `expired ${Math.abs(days)}d ago`;
+  if (days === 0) return "due today";
+  return `expires in ${days}d`;
+};
+
+// "N mo" for a positive/zero months-to-expiry, "expired" for a negative one (a lapsed,
+// still-occupied holdover lease — e.g. status "expired" — rather than a bare confusing
+// negative number), "—" when there's no term to report at all (month-to-month, or the
+// unit is vacant so months_to_expiry is null).
+export const fmtMonthsToExpiry = (months: number | null) => {
+  if (months == null) return "—";
+  if (months < 0) return "expired";
+  return `${months} mo`;
+};
 
 // The dashboard endpoints auto-compute "prior period" as the immediately preceding period
 // of equal length — which lands exactly one calendar year back whenever the selected span

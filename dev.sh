@@ -156,19 +156,29 @@ start_backend() {
 
   # Start the server
   PYTHONPATH=.pydeps python3 -m uvicorn app.main:app --port 8000 --reload > "$LOG_DIR/backend.log" 2>&1 &
-  PIDS+=($!)
+  local backend_pid=$!
+  PIDS+=($backend_pid)
 
-  # Give it a moment to start
-  sleep 2
+  # Wait for the port to bind. Under `--reload` uvicorn first spawns a WatchFiles
+  # reloader, then a child server process that actually binds — on WSL this can
+  # take ~3s, longer than a single fixed sleep, so poll instead of guessing.
+  local waited=0
+  while [ $waited -lt 20 ]; do
+    if port_in_use 8000; then
+      log_success "Backend started (port 8000)"
+      return 0
+    fi
+    # If the process died, stop waiting and report the failure immediately.
+    if ! kill -0 "$backend_pid" 2>/dev/null; then
+      break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
 
-  if port_in_use 8000; then
-    log_success "Backend started (port 8000)"
-    return 0
-  else
-    log_error "Backend failed to start. See $LOG_DIR/backend.log"
-    cat "$LOG_DIR/backend.log"
-    return 1
-  fi
+  log_error "Backend failed to start. See $LOG_DIR/backend.log"
+  cat "$LOG_DIR/backend.log"
+  return 1
 }
 
 # Start frontend

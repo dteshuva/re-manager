@@ -21,6 +21,8 @@ DEFAULTS = {
     "unit_noi_drop_min_abs": 0, "unit_noi_drop_min_pct": 15,
     "unit_expense_spike_min_abs": 0, "unit_expense_spike_min_pct": 100,
     "vacancy_min_occupancy_drop_pct": 2,
+    # Added by migration 0007; required by AttentionSettingsIn, so omitting it 422s.
+    "vacancy_high_absolute_pct": 20,
 }
 
 
@@ -81,11 +83,32 @@ assert any(i["type"] == "noi_drop" and i["property_name"] == "Cedar Commons" for
 assert not any(i["type"] == "expense_spike" for i in a)
 print(f"   suppress Cedar's spike → its NOI drop un-merges and shows standalone ✓")
 
-# Vacancy is relative: raise the occupancy-drop floor above Maple's 2.2pp → it drops out.
+# Vacancy is relative: `vacancy_min_occupancy_drop_pct` is the materiality floor on the
+# property-grain `occupancy_drop` detector, measured in PERCENTAGE POINTS of occupancy so
+# the alert is size-independent (Maple losing 1 of 45 units = 2.2pp; the same single unit in
+# a 1,000-unit property would be 0.1pp and stay quiet).
 put(vacancy_min_occupancy_drop_pct=3.0)
 v = get(FEED)["items"]
-assert not any(i["type"] == "vacancy" for i in v)
-print(f"   vacancy floor 3.0pp → Maple's 2.2pp drop no longer flags ✓")
+assert not any(i["type"] == "occupancy_drop" for i in v), v
+# Nothing is silently lost when the property-level alert doesn't clear the floor: the
+# unit-grain vacancy is no longer folded into it and reports on its own instead.
+vac_items = [i for i in v if i["type"] == "vacancy"]
+assert len(vac_items) == 1 and vac_items[0]["unit_number"] == "105", v
+print("   occupancy floor 3.0pp → Maple's 2.2pp drop no longer flags at property grain ✓")
+
+put(vacancy_min_occupancy_drop_pct=2.0)
+v = get(FEED)["items"]
+drop = next(i for i in v if i["type"] == "occupancy_drop")
+assert abs(drop["detail"]["occupancy_pp_drop"] - 2.2) < 0.1, drop["detail"]
+assert drop["detail"]["vacated_units"] == ["105"], drop["detail"]
+assert not any(i["type"] == "vacancy" for i in v), "unit vacancy should be folded in"
+print("   restored 2.0pp → flags as one property-level item naming unit 105 ✓")
+
+# A threshold that IS live: raise the unit NOI-drop floor and Oak Ridge's drop clears.
+put(noi_drop_min_pct=90)
+n = get(FEED)["items"]
+assert not any(i["type"] == "noi_drop" and i["property_name"] == "Oak Ridge Residences" for i in n)
+print("   NOI-drop floor 90% → Oak Ridge's -58% no longer flags ✓")
 
 # Restore + confirm the merged answer key.
 put()
@@ -97,17 +120,22 @@ print("\n2b) ROOT-CAUSE LINKING — magnitude reconciliation -------------------
 from datetime import date
 from app.attention import attention_feed, Thresholds
 
+# Multi-tenancy (migration 0017): every query-layer entry point takes account_id as a
+# REQUIRED positional arg right after `db`, so a call that forgets to scope fails loudly
+# instead of quietly aggregating across accounts.
+ACCOUNT_ID = db.scalar(text("SELECT account_id::text FROM users WHERE email = 'admin@example.com'"))
+
 # Default ratio 0.8: Cedar's opex rose ~$29.4k and NOI fell ~$29.4k → they reconcile → merged.
-merged = attention_feed(db, date(2025, 6, 1), date(2025, 6, 1))["items"]
+merged = attention_feed(db, ACCOUNT_ID, date(2025, 6, 1), date(2025, 6, 1))["items"]
 csp = [i for i in merged if i["type"] == "expense_spike" and i["property_name"] == "Cedar Commons"][0]
 assert "drove_noi_down" in csp["detail"] and abs(csp["detail"]["drove_noi_down"] - 29_438) < 50
 assert not any(i["type"] == "noi_drop" and i["property_name"] == "Cedar Commons" for i in merged)
 print("   ratio 0.8: Cedar NOI drop merged into spike (opex↑ ≈ NOI↓) ✓")
 
 # Stricter ratio 1.5: the ~1:1 reconciliation no longer clears the bar → keep them SEPARATE.
-t = Thresholds.from_db(db)
+t = Thresholds.from_db(db, ACCOUNT_ID)
 t.reconcile_ratio = 1.5
-sep = attention_feed(db, date(2025, 6, 1), date(2025, 6, 1), thresholds=t)["items"]
+sep = attention_feed(db, ACCOUNT_ID, date(2025, 6, 1), date(2025, 6, 1), thresholds=t)["items"]
 assert any(i["type"] == "noi_drop" and i["property_name"] == "Cedar Commons" for i in sep)
 print("   ratio 1.5: magnitudes don't clear the bar → NOI drop kept separate ✓")
 

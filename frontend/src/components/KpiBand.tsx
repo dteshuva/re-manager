@@ -1,5 +1,5 @@
 import { Line, LineChart, ResponsiveContainer, YAxis } from "recharts";
-import type { OccupancyMetrics, TrendPoint } from "../api";
+import type { OccupancyMetrics, TrendPoint, VarianceMetrics } from "../api";
 import { CHART, fmtCurrency } from "../ui";
 
 // Works for both the portfolio and a single property — anything with current/prior
@@ -30,7 +30,7 @@ function pctChange(cur: number, prior: number | undefined): number | null {
 }
 
 // "up good / down bad", except expense-like metrics where the sense is inverted.
-function toneClass(change: number, expenseLike: boolean): string {
+export function toneClass(change: number, expenseLike: boolean): string {
   if (change === 0) return "is-flat";
   const good = expenseLike ? change < 0 : change > 0;
   return good ? "is-good" : "is-bad";
@@ -58,7 +58,7 @@ function Sparkline({ data, dataKey, color, label }: { data: TrendPoint[]; dataKe
   );
 }
 
-function DeltaChip({ change, pct, expenseLike, fmt }: {
+export function DeltaChip({ change, pct, expenseLike, fmt }: {
   change: number;
   pct: number | null;
   expenseLike: boolean;
@@ -76,7 +76,7 @@ function DeltaChip({ change, pct, expenseLike, fmt }: {
   );
 }
 
-export default function KpiBand({ data }: { data: KpiData }) {
+export default function KpiBand({ data, variance }: { data: KpiData; variance?: VarianceMetrics | null }) {
   const { current, prior, trend } = data;
   if (!current) {
     return <p className="hint">No summarized data yet — post a month to populate the dashboard.</p>;
@@ -87,6 +87,14 @@ export default function KpiBand({ data }: { data: KpiData }) {
   const occCur = current.occupancy;
   const occPrior = prior?.occupancy ?? undefined;
   const occChangePp = occCur !== null && occPrior !== undefined ? (occCur - occPrior) * 100 : null;
+
+  // "vs plan" only renders on the NOI card, and only when the period has at least some
+  // budget coverage — a property/period with no budget entered shows nothing extra rather
+  // than a misleading $0 plan. Partial coverage (plan_coverage_months < total_months) still
+  // renders the numbers but says so, matching the backend's "don't silently assume $0" rule.
+  const planNoi = variance?.plan_noi ?? null;
+  const showPlan = variance != null && planNoi !== null && variance.variance_noi !== null;
+  const partialPlan = showPlan && variance!.plan_coverage_months < variance!.total_months;
 
   return (
     <div className="kpi-grid">
@@ -102,6 +110,19 @@ export default function KpiBand({ data }: { data: KpiData }) {
               <DeltaChip change={change} pct={pct} expenseLike={expenseLike} fmt={signedMoney} />
             ) : (
               <div className="kpi-card__delta is-flat">no prior period</div>
+            )}
+            {key === "noi" && showPlan && (
+              <div style={{ marginTop: 4 }}>
+                <DeltaChip
+                  change={variance!.variance_noi!}
+                  pct={variance!.variance_noi_pct}
+                  expenseLike={false}
+                  fmt={signedMoney}
+                />
+                <div className="kpi-card__pct" style={{ marginTop: 2 }}>
+                  vs plan{partialPlan ? ` (${variance!.plan_coverage_months}/${variance!.total_months} mo budgeted)` : ""}
+                </div>
+              </div>
             )}
             <Sparkline data={trend} dataKey={key} color={color} label={label} />
           </div>

@@ -21,9 +21,18 @@ db = SessionLocal()
 tok = client.post("/auth/login", data={"username": "admin@example.com", "password": "admin12345"}).json()["access_token"]
 H = {"Authorization": f"Bearer {tok}"}
 
-OAK = "46d27318-797f-4793-ba16-2f107adde59b"       # Oak Ridge — 24 months, no gap (test writes/deletes here)
-ASH = "1a7266ea-3c52-4db8-a972-cd9d88184065"       # Ash Grove — 23 months (June 2025 MISSING): gap regression
-BIRCH = "f02e6c43-5034-42ce-8a45-dcd83ecfceb8"     # Birch Lane — no investment inputs
+# Resolved by NAME, not by hard-coded id: property ids are server-generated, so a
+# re-seeded database (or a second developer's) gets different UUIDs and every hard-coded
+# id 404s. Names are stable fixtures the seed itself defines.
+def _pid(name: str) -> str:
+    pid = db.scalar(text("SELECT id::text FROM properties WHERE name = :n"), {"n": name})
+    assert pid, f"seed fixture missing: {name}"
+    return pid
+
+
+OAK = _pid("Oak Ridge Residences")     # 24 months, no gap (test writes/deletes here)
+ASH = _pid("Ash Grove Apartments")     # 23 months (June 2025 MISSING): gap regression
+BIRCH = _pid("Birch Street House")     # no investment inputs
 EPS = 1e-6
 
 

@@ -49,20 +49,34 @@ assert cedar[0]["type"] == "expense_spike" and cedar[0]["category"] == "Repairs 
 assert cedar[0]["unit_id"] is None  # property/tier-scoped, not a unit
 assert 29_000 <= cedar[0]["change"] <= 30_000
 
-# Maple Court: exactly one item — unit 105 vacancy.
+# Maple Court: ONE item for the whole move-out event. Two root-cause links collapse what
+# used to be three separate rows (unit vacancy + unit NOI drop + property occupancy drop):
+#   `_link_vacancy_to_noi_drop`            — a vacated unit's NOI drop is the same event,
+#                                            so it folds into the vacancy (NOI in detail);
+#   `_fold_vacancies_into_occupancy_drops` — the surviving vacancy folds into the
+#                                            property-level occupancy drop that explains it.
 maple = get(f"/properties/{pid['Maple Court Apartments']}/attention?from={M}&to={M}")["items"]
 print(f"   Maple Court:   {len(maple)} item(s) -> {[(i['type'], i['unit_number']) for i in maple]}")
 assert len(maple) == 1, maple
-assert maple[0]["type"] == "vacancy" and maple[0]["unit_number"] == "105"
-assert abs(maple[0]["magnitude"] - 1500) < 1
+item = maple[0]
+assert item["type"] == "occupancy_drop", item
+assert item["detail"]["vacated_units"] == ["105"], item["detail"]
+assert item["detail"]["units_lost"] == 1, item["detail"]
+assert abs(item["magnitude"] - 1500) < 1, item["magnitude"]
 
-# Oak Ridge: every unit's NOI dropped (rent concession) → 62 unit noi_drops, nothing else.
+# Oak Ridge: the rent concession drops EVERY unit's NOI by the same amount — a
+# building-wide event. `_cluster_and_rollup` (ROLLUP_MIN_COUNT=3) collapses that tight
+# cluster of near-identical per-unit items into ONE rolled-up row rather than flooding the
+# feed with 62 duplicates. This assertion used to expect the 62 individual items, from
+# before the roll-up existed.
 oak = get(f"/properties/{pid['Oak Ridge Residences']}/attention?from={M}&to={M}")["items"]
 types = {i["type"] for i in oak}
 print(f"   Oak Ridge:     {len(oak)} item(s); types={types}")
-assert len(oak) == 62, len(oak)
+assert len(oak) == 1, oak
 assert types == {"noi_drop"}
-assert all(i["unit_id"] is not None for i in oak)
+rolled = oak[0]
+assert rolled.get("rolled_up") is True, rolled
+assert rolled["count"] == 62, rolled["count"]
 
 # A non-anomaly property is quiet.
 pine = get(f"/properties/{pid['Pine Valley Tower']}/attention?from={M}&to={M}")["items"]

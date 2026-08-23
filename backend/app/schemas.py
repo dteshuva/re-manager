@@ -10,6 +10,16 @@ _STATUS_PATTERN = "^(draft|posted|locked)$"
 
 
 # ---- Auth ----
+class SignupRequest(BaseModel):
+    """Self-serve registration. Creates a NEW account, not a user inside an existing one —
+    ``POST /auth/users`` is the admin-only path for that."""
+
+    email: EmailStr
+    password: str = Field(min_length=8)
+    # Optional: defaults to "<email>'s portfolio" so signup is a two-field form.
+    account_name: str | None = Field(default=None, max_length=120)
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
@@ -21,6 +31,13 @@ class UserOut(BaseModel):
     email: EmailStr
     role: str
     is_active: bool
+    # Which account this user acts for — the tenancy boundary, surfaced so the UI can
+    # show whose portfolio is on screen.
+    account_id: str
+    account_name: str
+    # Display currency for this account ('USD' | 'GBP', migration 0019). The frontend uses it
+    # to pick the currency symbol/locale for every figure it formats.
+    account_currency: str = "USD"
 
     class Config:
         from_attributes = True
@@ -100,6 +117,14 @@ class UnitCreate(BaseModel):
 class UnitUpdate(BaseModel):
     unit_number: str | None = Field(default=None, min_length=1)
     label: str | None = None
+    # Migration 0015 — the unit's market/asking rent (waterfall follow-up #1): an
+    # admin-editable reference figure so analysts can load a real comp/appraisal/market-
+    # survey rent instead of the synthetic `backfill_unit_market_rent.py` value. Reference
+    # data only — never feeds NOI/cash-flow. `ge=0` mirrors the column's own
+    # `units_market_rent_nonneg` CHECK constraint (belt-and-suspenders: a clean 422 here
+    # beats a raw DB IntegrityError). Admin-gated at the router (`require_admin`), same
+    # convention as every other portfolio-shaping mutation (leases/budgets/tags).
+    market_rent: float | None = Field(default=None, ge=0)
 
 
 class UnitOut(BaseModel):
@@ -107,6 +132,7 @@ class UnitOut(BaseModel):
     property_id: str
     unit_number: str
     label: str | None = None
+    market_rent: float | None = None
 
     class Config:
         from_attributes = True
@@ -130,9 +156,29 @@ class CategoryOut(BaseModel):
     name: str
     default_classification: str
     active: bool
+    # Only populated when GET /categories?include_usage=true is passed (one extra grouped
+    # count query) — how many line items currently reference this category. 0 flags a
+    # category as an unused cleanup/merge candidate (e.g. PDF-import junk).
+    usage_count: int | None = None
 
     class Config:
         from_attributes = True
+
+
+class CategoryMergeIn(BaseModel):
+    target_id: str
+    # A source/target with DIFFERENT classifications moves real dollars across the NOI line
+    # (e.g. a `rent` category merged into `operating`), not just consolidating the breakdown —
+    # require an explicit opt-in for that case (the UI's own confirm dialog already warns about
+    # it; this is the server-side guard for a direct API call that bypasses the UI).
+    allow_classification_change: bool = False
+
+
+class CategoryMergeOut(BaseModel):
+    source_id: str
+    target_id: str
+    reassigned_count: int
+    deactivated: bool
 
 
 # ---- Line items (CRUD) ----
@@ -160,17 +206,21 @@ class LineItemOut(BaseModel):
 # ---- Monthly records (CRUD) ----
 class MonthlyRecordCreate(BaseModel):
     """Upsert a property/unit month. ``unit_id`` NULL ⇒ property-tier record.
-    ``line_items`` replaces the record's items wholesale (idempotent save)."""
+    ``line_items`` replaces the record's items wholesale (idempotent save). ``is_vacant``
+    explicitly marks a unit-month as vacant (distinct from simply never posting a record for
+    it) — meaningless for a property-tier record (``unit_id`` NULL) and ignored there."""
 
     property_id: str
     unit_id: str | None = None
     month: date
     notes: str | None = None
+    is_vacant: bool = False
     line_items: list[LineItemCreate] = []
 
 
 class MonthlyRecordUpdate(BaseModel):
     notes: str | None = None
+    is_vacant: bool | None = None
 
 
 class MonthlyRecordOut(BaseModel):
@@ -179,6 +229,7 @@ class MonthlyRecordOut(BaseModel):
     unit_id: str | None = None
     month: date
     notes: str | None = None
+    is_vacant: bool = False
     line_items: list[LineItemOut] = []
 
 
@@ -345,7 +396,10 @@ class PortfolioDashboard(BaseModel):
 # ---- Attention feed (ranked exceptions, computed from the rollups) ----
 class AttentionItem(BaseModel):
     """One ranked exception. ``magnitude`` is the $ used for ranking; ``type`` selects the
-    detector (noi_drop | expense_spike | vacancy | missing_data) and what change/pct mean.
+    detector (noi_drop | expense_spike | vacancy | occupancy_drop | high_vacancy |
+    missing_data) and what change/pct mean. For ``occupancy_drop``, ``current``/``prior`` are
+    occupancy PERCENTAGES and ``change`` is the movement in percentage points (``pct_change``
+    is null — the change is already a percentage-point figure, not a percent-of-percent).
     ``unit_id`` / ``unit_number`` are set for unit-scoped items in the property feed."""
 
     type: str
@@ -376,6 +430,40 @@ class AttentionFeed(BaseModel):
     period_to: date | None
     items: list[AttentionItem] = []
     thresholds: dict = {}
+
+
+# ---- Portfolio-wide worst-units leaderboard (top-N units by NOI drop, across every
+#      property, ranked by $ magnitude — complements the property-scoped attention feed) ----
+class WorstUnitItem(BaseModel):
+    """One leaderboard row: a single unit's NOI drop, OR — when a tight cluster of
+    same-property/same-month/same-magnitude drops collapses via ``_cluster_and_rollup`` — a
+    rolled-up summary row for many units at once (``rolled_up=True``, ``unit_id``/``unit_number``
+    None, ``count`` set). See ``attention.worst_units``."""
+
+    property_id: str
+    property_name: str
+    unit_id: str | None = None
+    unit_number: str | None = None
+    month: date
+    current: float | None = None
+    prior: float | None = None
+    change: float | None = None  # negative (a drop); None for a rolled-up row (see detail)
+    pct_change: float | None = None
+    magnitude: float  # abs($change), or the cluster total for a rolled-up row; the ranking key
+    label: str
+    rolled_up: bool = False
+    count: int | None = None  # number of units collapsed into this row, when rolled_up
+
+
+class WorstUnitsLeaderboard(BaseModel):
+    period_from: date | None
+    period_to: date | None
+    items: list[WorstUnitItem] = []
+
+
+# ---- Portfolio segmentation (tags) ----
+class PropertyTagIn(BaseModel):
+    tag: str = Field(min_length=1, max_length=64)
 
 
 # ---- Attention settings (sub-step 6): per-account configurable thresholds ----
@@ -421,8 +509,15 @@ class UnitRosterRow(PnLMetrics):
     unit_id: str
     unit_number: str
     label: str | None = None
-    status: str  # "occupied" | "vacant"
+    # "occupied" | "vacant" (a record exists, explicitly flagged vacant or $0 rent) |
+    # "missing" (no monthly_record posted for this unit-month at all — distinct from vacant).
+    status: str
     noi_change: float | None = None  # vs prior month (None if no prior data)
+    # Migration 0012, additive cross-reference: the unit's CURRENT lease state (today, not
+    # this row's month) — independent of `status` above (a historical per-month fact) and
+    # can legitimately disagree with it. "vacant" when no lease is on file at all.
+    lease_status: str | None = None
+    lease_tenant_name: str | None = None
 
 
 class UnitRoster(BaseModel):
@@ -436,11 +531,13 @@ class UnitRoster(BaseModel):
 
 # ---- Unit detail (sub-step 5): Level 3 ----
 class UnitDetailMonth(PnLMetrics):
-    """One month of a unit's P&L. ``status`` is vacant when the unit had no rent that month.
-    Unit scope excludes property-tier-only items by design (capex/debt at the property tier)."""
+    """One month of a unit's P&L. ``status`` distinguishes "occupied", an explicit/inferred
+    "vacant" (a record was posted, $0 rent), and "missing" (no record posted at all — the
+    spine month has no matching row). Unit scope excludes property-tier-only items by design
+    (capex/debt at the property tier)."""
 
     month: date
-    status: str  # "occupied" | "vacant"
+    status: str  # "occupied" | "vacant" | "missing"
 
 
 class UnitDetail(BaseModel):
@@ -456,6 +553,12 @@ class UnitDetail(BaseModel):
     property_id: str
     property_name: str
     status: str
+    # Migration 0012, additive cross-reference: the unit's CURRENT lease state (today), NOT
+    # a replacement for `status`/`months` above (those stay record-driven). "vacant" when
+    # no lease is on file at all. See app/queries.py's unit_detail docstring for why these
+    # two independent signals aren't merged into one.
+    lease_status: str = "vacant"
+    lease_tenant_name: str | None = None
     months: list[UnitDetailMonth] = []
 
 
@@ -566,6 +669,14 @@ class InvestmentMetrics(BaseModel):
     avg_cash_on_cash: float | None = None
 
 
+class MissingInvestmentProperty(BaseModel):
+    """A property with no acquisition data on file yet — the adoption-gap nudge's payload."""
+
+    property_id: str
+    property_name: str
+    type: str
+
+
 class PortfolioInvestment(BaseModel):
     """Every property that has investment inputs, plus value-weighted portfolio aggregates.
 
@@ -583,3 +694,521 @@ class PortfolioInvestment(BaseModel):
     cap_rate_property_count: int = 0
     cash_on_cash_property_count: int = 0
     dscr_property_count: int = 0
+    # Adoption-gap nudge: how many of the portfolio's properties have NO acquisition data at
+    # all yet (vs how many exist total), and which ones — so the UI can prompt completion.
+    total_property_count: int = 0
+    missing_property_count: int = 0
+    missing_properties: list[MissingInvestmentProperty] = []
+
+
+# ---- Portfolio benchmarking (cross-property comparison against the portfolio average) ----
+class BenchmarkValue(BaseModel):
+    """One metric for one property: its raw value, delta vs the portfolio average (mean),
+    and its rank/percentile among properties where the metric is computable. ``value`` is
+    None when the metric can't be honestly computed for this property (e.g. cap rate with
+    no acquisition data) — such properties are excluded from the mean/median/rank entirely,
+    never treated as zero."""
+
+    value: float | None = None
+    delta_vs_mean: float | None = None  # value - portfolio mean; None if either side is None
+    rank: int | None = None  # 1 = best-performing property for this metric (ties share a rank)
+    percentile: float | None = None  # 0..100, 100 = best; None if value is None
+
+
+class PropertyBenchmarkRow(BaseModel):
+    property_id: str
+    property_name: str
+    type: str
+    noi_per_unit: BenchmarkValue
+    opex_ratio: BenchmarkValue
+    physical_occupancy: BenchmarkValue
+    economic_occupancy: BenchmarkValue
+    cap_rate: BenchmarkValue
+    cash_on_cash: BenchmarkValue
+
+
+class BenchmarkMetricStats(BaseModel):
+    """Portfolio-wide stats for one metric. ``mean``/``median`` are a SIMPLE average across
+    properties with a computable value — deliberately NOT value-weighted (unlike
+    ``PortfolioInvestment``'s aggregates), so a benchmarking view isn't dominated by the
+    largest asset; each property counts once. ``count`` is the denominator (properties with
+    a non-null value for this metric) — may be less than ``property_count``."""
+
+    mean: float | None = None
+    median: float | None = None
+    count: int = 0
+    higher_is_better: bool  # for UI tone: whether an above-average value is "good"
+
+
+class PortfolioBenchmarks(BaseModel):
+    """Every property benchmarked against the portfolio simple-mean average on NOI/unit,
+    operating expense ratio, physical + economic occupancy, cap rate, and cash-on-cash.
+
+    NOI/opex-ratio/physical-occupancy are period-scoped (``period_from``/``period_to``,
+    resolved the same way as ``PortfolioDashboard``: defaults to the latest summarized
+    month). Economic occupancy reuses the rent roll's CURRENT lease-status snapshot (same
+    computation as ``RentRoll.occupancy.economic_occupancy``) — it is NOT scoped to the
+    period; occupancy derived from lease status is inherently a point-in-time read, unlike
+    the flow metrics. Cap rate / cash-on-cash are the same trailing-12, acquisition-based
+    figures as ``InvestmentMetrics`` — also not period-scoped. ``tags`` optionally scopes
+    both the rows and the average to properties carrying ANY of the given tags (OR
+    semantics)."""
+
+    period_from: date | None = None
+    period_to: date | None = None
+    tags: list[str] | None = None
+    property_count: int = 0
+    noi_per_unit: BenchmarkMetricStats
+    opex_ratio: BenchmarkMetricStats
+    physical_occupancy: BenchmarkMetricStats
+    economic_occupancy: BenchmarkMetricStats
+    cap_rate: BenchmarkMetricStats
+    cash_on_cash: BenchmarkMetricStats
+    properties: list[PropertyBenchmarkRow] = []
+
+
+# ---- Budget / variance (flat annual plan per property, actual-vs-plan) ----
+class PropertyBudgetIn(BaseModel):
+    """Annual plan inputs for one property/year. Monthly plan = annual ÷ 12."""
+
+    budgeted_gross_rent: float = Field(ge=0)
+    budgeted_operating_expenses: float = Field(ge=0)
+
+
+class PropertyBudgetOut(PropertyBudgetIn):
+    property_id: str
+    year: int
+    budgeted_noi: float  # budgeted_gross_rent - budgeted_operating_expenses (computed)
+    updated_at: datetime
+
+
+class VarianceMetrics(BaseModel):
+    """Actual vs. plan for a scope/period. Plan is the flat annual budget(s) pro-rated across
+    the requested month range (annual ÷ 12 per covered month, summed across any years the
+    range spans). ``plan_*``/``variance_*`` are None only when the scope has zero budget
+    coverage for the period; a period that's *partially* covered still returns numbers, with
+    ``plan_coverage_months`` < ``total_months`` telling the caller the plan is incomplete."""
+
+    period_from: date | None
+    period_to: date | None
+    total_months: int = 0
+    plan_coverage_months: int = 0  # months in the period actually covered by a budget row
+
+    actual_gross_rent: float = 0
+    actual_operating_expenses: float = 0
+    actual_noi: float = 0
+
+    plan_gross_rent: float | None = None
+    plan_operating_expenses: float | None = None
+    plan_noi: float | None = None
+
+    variance_gross_rent: float | None = None  # actual - plan ($)
+    variance_operating_expenses: float | None = None
+    variance_noi: float | None = None
+    variance_noi_pct: float | None = None  # variance_noi / |plan_noi|, None if plan_noi == 0
+
+
+class PropertyVariance(VarianceMetrics):
+    property_id: str
+    property_name: str
+
+
+class PortfolioVariance(VarianceMetrics):
+    """Portfolio-level variance: BOTH actual and plan are scoped to only the properties that
+    have budget coverage for the period (actual is NOT the whole-portfolio total) — comparing
+    an all-property actual against a partially-budgeted plan produced a meaningless variance %.
+    ``budgeted_property_count`` (out of ``total_property_count``) discloses how much of the
+    portfolio this comparison actually covers."""
+
+    budgeted_property_count: int = 0
+    total_property_count: int = 0
+
+
+# ---- Rent roll / lease-level data (migration 0012) ---------------------------------
+_LEASE_STATUS_PATTERN = "^(active|notice|expired|vacant)$"
+
+
+class LeaseIn(BaseModel):
+    """Admin-editable lease fields. ``end_date`` null = month-to-month (no fixed term).
+    ``contract_rent`` is reference data — it never feeds NOI/cash-flow math.
+
+    v2 fields (migration 0013), all reference/terms data with the same invariant:
+    ``security_deposit``, ``escalation_pct``/``escalation_frequency_months`` (a contract-
+    rent bump), and ``pct_rent_rate``/``pct_rent_breakpoint`` (percentage rent — retail
+    leases only, null otherwise). ``lease_type`` is deliberately NOT here — it's a DERIVED
+    fact of ``end_date`` (see ``LeaseOut``/the leases router), not an independently
+    settable one, so an edit can never leave it inconsistent with end_date.
+
+    ``concession_monthly`` (migration 0016): a standing $/month rent concession/discount,
+    distinct from bad debt — see the migration's docstring. Reference data, same
+    invariant. IMPORTANT for `update_lease` (a full-replace PATCH): this field MUST be
+    included in every save from the rent-roll editor, or an edit to any other field would
+    silently null out an existing concession."""
+
+    tenant_name: str = Field(min_length=1)
+    start_date: date
+    end_date: date | None = None
+    contract_rent: float = Field(ge=0)
+    status: str = Field(default="active", pattern=_LEASE_STATUS_PATTERN)
+    concession_monthly: float | None = Field(default=None, ge=0)
+    security_deposit: float | None = Field(default=None, ge=0)
+    escalation_pct: float | None = Field(default=None, ge=0, le=100)
+    escalation_frequency_months: int = Field(default=12, gt=0)
+    pct_rent_rate: float | None = Field(default=None, ge=0, le=100)
+    pct_rent_breakpoint: float | None = Field(default=None, ge=0)
+
+
+class LeaseOut(LeaseIn):
+    id: str
+    unit_id: str
+    lease_type: str  # 'fixed' | 'mtm' — server-derived from end_date, read-only
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class RentRollRow(BaseModel):
+    """One rent-roll line: a unit's identity + its current lease (if any) + the latest
+    actual recorded rent. ``status`` is the lease's own status (authoritative for
+    occupancy here) — 'vacant' when the unit has no lease on file at all. ``missing_data``
+    flags an occupied unit with no monthly_record for the property's latest summarized
+    month, kept distinct from a real vacancy per the analyst report's ask.
+
+    For a vacant unit (fix #3): ``tenant_name`` and ``months_to_expiry`` are null — the
+    prior tenant/term is not a current tenancy, so surfacing them as if it were is
+    misleading. ``contract_rent`` IS still populated for a vacant unit (its own
+    last-known/asking rent) — needed as the potential-rent figure for the GPR-based
+    economic occupancy calc (fix #1); the UI labels it "asking rent" for a vacant row.
+
+    v2 (migration 0013) additions, all reference/terms data:
+    - ``security_deposit``, ``escalation_pct``/``escalation_frequency_months``/
+      ``next_escalation_date`` (the next scheduled bump, derived from start_date +
+      frequency, first occurrence on/after today — null if there's no escalation on file).
+    - ``lease_type``: 'fixed' | 'mtm'.
+    - ``holdover``: True when this lease's term has lapsed (``end_date`` in the past) but
+      the tenant is still recorded as paying rent (a recent actual gross-rent record on
+      file) and no newer lease has taken over — distinct from a clean active lease AND
+      from a true vacancy. Still counted "occupied" (status stays whatever the lease's own
+      status is, typically 'expired') — this is a presentation flag layered on top, not a
+      change to the occupancy math.
+    - ``vacant_days``: for a vacant row only, days since the prior lease's end_date (its
+      "downtime") — null when the unit has never had a lease on file (no end_date to
+      count from).
+    - ``pct_rent_rate``/``pct_rent_breakpoint``: percentage-rent terms (retail leases
+      only; null for every residential lease).
+    - ``market_rent``: the unit's own ``units.market_rent`` (migration 0015, admin-
+      editable via `UnitUpdate`/`PATCH /units/{id}`) — the rent waterfall's GPR reference
+      figure, surfaced here too so it's visible/editable right next to the same unit's
+      lease. Independent of `contract_rent`/`status`.
+    - ``concession_monthly``: the current lease's standing $/month concession (migration
+      0016 — see `LeaseIn`), null when there's no lease on file or no concession."""
+
+    unit_id: str
+    unit_number: str
+    label: str | None = None
+    property_id: str
+    property_name: str
+    lease_id: str | None = None
+    tenant_name: str | None = None
+    lease_start: date | None = None
+    lease_end: date | None = None
+    contract_rent: float | None = None
+    status: str  # "active" | "notice" | "expired" | "vacant"
+    actual_rent: float | None = None
+    actual_month: date | None = None
+    missing_data: bool = False
+    months_to_expiry: int | None = None  # None = month-to-month, or unit is vacant
+    security_deposit: float | None = None
+    escalation_pct: float | None = None
+    escalation_frequency_months: int | None = None
+    next_escalation_date: date | None = None
+    lease_type: str | None = None  # "fixed" | "mtm" — null when there's no lease on file
+    holdover: bool = False
+    vacant_days: int | None = None
+    pct_rent_rate: float | None = None
+    pct_rent_breakpoint: float | None = None
+    market_rent: float | None = None
+    # Standing $/month rent concession (migration 0016) — see `LeaseIn.concession_monthly`.
+    # Null when the unit has no lease on file at all, OR when its lease has no concession.
+    concession_monthly: float | None = None
+    # Expected-vs-actual rent variance (analyst report: "connect lease economics to the
+    # P&L"). REFERENCE data only — never feeds NOI/cash-flow. Computed over the rent
+    # roll's `period_from`/`period_to` window (see `RentRoll`): `expected_rent` sums this
+    # unit's escalated contract rent across every covered month (see
+    # `app.queries._unit_expected_actual` for the exact governing-lease/holdover rule; a
+    # vacant month with no holdover contributes $0); `period_actual_rent` sums the SAME
+    # actual-gross-rent source the rent roll already uses (`unit_month_summary.gross_rent`),
+    # over the same months. `variance` = actual − expected (positive = collecting more than
+    # the lease's own escalated schedule implies; negative = a shortfall / loss-to-lease).
+    # `variance_pct` = variance ÷ expected (null when expected is $0, e.g. a vacant unit
+    # with no holdover in the whole window). All null only when there is no summarized
+    # unit-month data anywhere in scope to default a period from (`period_to` is null).
+    expected_rent: float | None = None
+    period_actual_rent: float | None = None
+    variance: float | None = None
+    variance_pct: float | None = None
+
+
+class OccupancySummary(BaseModel):
+    total_units: int
+    occupied_units: int
+    physical_occupancy: float | None = None  # occupied / total, fraction 0..1
+    # Gross Potential Rent: occupied units' contract rent + vacant units' potential rent
+    # (asking/last-known rent, or a property-average proxy). The denominator behind
+    # `economic_occupancy` below — exposed for transparency/auditing.
+    gross_potential_rent: float | None = None
+    # TRUE economic occupancy (fix #1): Σ actual collected rent ÷ Gross Potential Rent,
+    # where GPR includes vacant units' potential rent. Captures vacancy loss, so this
+    # comes in AT OR BELOW physical_occupancy whenever there's vacancy (can only exceed
+    # ~100% by a small actual-over-contract overage). This is NOT the same metric as the
+    # old (mislabeled) calculation — see `rent_realization`.
+    economic_occupancy: float | None = None
+    # Actual collected rent / contract rent, over OCCUPIED units with both figures on
+    # file — i.e. the metric this endpoint used to (incorrectly) call "economic
+    # occupancy". Kept under its own name because it excludes vacant units by
+    # construction and can therefore read ABOVE physical occupancy / 100%; it measures
+    # collections-vs-contract for in-place tenants, not vacancy loss.
+    rent_realization: float | None = None
+    # Average downtime (days) across vacant units with a known prior lease end_date — the
+    # portfolio/property "average vacancy days" stat. Null when there's no vacant unit with
+    # a known end_date to average (e.g. no vacancies, or vacancies with no lease history).
+    avg_vacant_days: float | None = None
+
+
+class RentVarianceRollup(BaseModel):
+    """Property/portfolio-level expected-vs-actual rent variance for the rent roll's
+    `period_from`/`period_to` window. Excludes shell/synthetic units (same exclusion, same
+    reason, as `OccupancySummary`'s aggregates). REFERENCE data — see `RentRollRow`'s
+    per-unit fields for the exact expected-rent formula; this is just their sum."""
+
+    total_expected_rent: float
+    total_actual_rent: float
+    variance: float  # total_actual_rent - total_expected_rent
+    variance_pct: float | None = None  # null when total_expected_rent is $0
+    unit_count: int  # non-shell units included in this rollup
+
+
+class RentRoll(BaseModel):
+    property_id: str | None = None  # None for the portfolio-wide rent roll
+    as_of: date
+    rows: list[RentRollRow] = []
+    occupancy: OccupancySummary
+    # Expected-vs-actual rent variance window + rollup. `period_from`/`period_to` default
+    # to the latest month with any actual data on file for this scope (a single-month
+    # window) when the caller doesn't pass `from`/`to` — both null only when the scope has
+    # no summarized unit-month data at all yet (a brand-new/empty portfolio).
+    period_from: date | None = None
+    period_to: date | None = None
+    rent_variance: RentVarianceRollup | None = None
+
+
+class PercentageRentCalc(BaseModel):
+    """Percentage-rent overage calc for one lease (migration 0013). Terms
+    (``pct_rent_rate``/``pct_rent_breakpoint``) are stored, reference-only lease data;
+    sales figures are NOT tracked anywhere in this app, so ``annual_sales`` is a
+    caller-supplied, non-persisted input and ``overage_rent`` is computed on the fly —
+    never fed into NOI/cash-flow. ``has_percentage_rent_terms`` is False (and
+    ``overage_rent`` null) for the overwhelming majority of leases (residential), which
+    carry no percentage-rent terms at all."""
+
+    lease_id: str
+    has_percentage_rent_terms: bool
+    pct_rent_rate: float | None = None
+    pct_rent_breakpoint: float | None = None
+    annual_sales: float | None = None
+    overage_rent: float | None = None
+
+
+class LeaseExpirationItem(BaseModel):
+    unit_id: str
+    unit_number: str
+    label: str | None = None
+    property_id: str
+    property_name: str
+    tenant_name: str
+    lease_end: date
+    contract_rent: float
+    months_to_expiry: int
+
+
+class LeaseExpirations(BaseModel):
+    within_months: int
+    as_of: date
+    items: list[LeaseExpirationItem] = []
+    # Rollup (fix #2): total contract rent of the returned (expiring) leases, and that as
+    # a fraction of total in-place portfolio contract rent — both honoring the same
+    # `tags` filter, so they stay internally consistent with each other.
+    total_contract_rent_expiring: float = 0.0
+    pct_of_portfolio_rent: float | None = None
+
+
+class RentWaterfallTotals(BaseModel):
+    """The standard CRE rent bridge, GPR stepping down to actual collected rent (migration
+    0015: ``units.market_rent``). REFERENCE data — computed on read from
+    ``units.market_rent`` + ``lease``/``unit_month_summary`` (plus, for single-asset
+    properties, ``property_month_summary`` — rework item 3), exactly like the rent-roll's
+    expected-vs-actual variance figures; never feeds NOI/cash-flow.
+
+    Basis (rework item 2): computed over EVERY real (non-shell) unit-month in scope, driven
+    by lease status — never gated on whether an actual record happens to be on file — plus
+    each single-asset property's property-tier rent as a pass-through leg. This is what
+    makes ``actual_collected`` reconcile to the portfolio/property P&L's gross rent for the
+    same scope/period (see the rent-waterfall-rework changelog for live proof).
+
+    - ``gpr``: Gross Potential Rent — every real (non-shell) unit-month in scope, priced at
+      its own ``market_rent`` (or, for a single-asset property, its actual property-tier
+      rent — there's no per-unit market rent to price a unitless property at).
+    - ``loss_to_lease``: over OCCUPIED unit-months, ``market_rent - in_place_scheduled``
+      (the escalated contract rent). Negative = gain-to-lease (in-place rent above market).
+    - ``vacancy_loss``: over VACANT unit-months (no lease in force, no holdover), the full
+      ``market_rent`` — nothing was collected because nothing was in force.
+    - ``collections_loss``: over OCCUPIED unit-months, ``in_place_scheduled - actual`` —
+      contracted-but-uncollected rent. Kept as a line for backward compatibility; it now
+      always equals ``concessions + bad_debt`` exactly (waterfall-followups item 3 — see
+      those two fields below for the split).
+    - ``concessions`` / ``bad_debt`` (waterfall-followups item 3): the split of
+      ``collections_loss`` into a leasing-decision piece and a delinquency piece.
+      ``concessions`` sums, over occupied unit-months, each lease's modeled
+      ``concession_monthly`` (migration 0016) capped at that month's own shortfall
+      (``max(0, in_place_scheduled - actual)``) — never attributing more concession than
+      the shortfall that actually occurred that month, so a lease with a concession but no
+      real collections gap that month contributes $0. ``bad_debt`` is the remainder:
+      ``collections_loss - concessions`` (can be negative in the same months
+      ``collections_loss`` itself is negative — a collections GAIN, e.g. fees/a rent bump
+      not yet re-papered — exactly mirroring ``loss_to_lease``'s own sign convention).
+      Computed on read; no change to ``actual_collected`` or NOI.
+    - ``actual_collected``: the same ``unit_month_summary.gross_rent`` (unit-level) /
+      ``property_month_summary.gross_rent`` (single-asset) source the rest of the app uses,
+      summed over the same unit-months / property-months.
+    - ``residual``: ``gpr - loss_to_lease - vacancy_loss - collections_loss -
+      actual_collected`` — equivalently ``gpr - loss_to_lease - vacancy_loss -
+      concessions - bad_debt - actual_collected`` (item 3's restated identity), since
+      ``collections_loss = concessions + bad_debt`` exactly. Should be ~0 (to the cent) by
+      construction; returned explicitly so it can be verified rather than trusted blindly.
+    - ``loss_to_lease_pct_of_gpr`` / ``vacancy_loss_pct_of_gpr`` /
+      ``collections_loss_pct_of_gpr`` / ``concessions_pct_of_gpr`` /
+      ``bad_debt_pct_of_gpr`` / ``actual_collected_pct_of_gpr`` (rework item 4, extended by
+      item 3): each line as a fraction of ``gpr`` (e.g. ``0.055`` = 5.5%; NOT
+      pre-multiplied by 100, same convention as
+      ``LeaseExpirationSummary.pct_of_portfolio_rent`` — the frontend formats it, same as
+      that field). ``null`` when ``gpr`` is 0 (nothing to divide by, not "0%").
+    """
+
+    gpr: float
+    loss_to_lease: float
+    vacancy_loss: float
+    collections_loss: float
+    concessions: float = 0.0
+    bad_debt: float = 0.0
+    actual_collected: float
+    residual: float
+    loss_to_lease_pct_of_gpr: float | None = None
+    vacancy_loss_pct_of_gpr: float | None = None
+    collections_loss_pct_of_gpr: float | None = None
+    concessions_pct_of_gpr: float | None = None
+    bad_debt_pct_of_gpr: float | None = None
+    actual_collected_pct_of_gpr: float | None = None
+
+
+class UnitRentWaterfallRow(RentWaterfallTotals):
+    """One unit's contribution to its property's rent waterfall (waterfall-followups item
+    4, optional per-unit drill-down — see `RentWaterfall.units`). Same components as the
+    property/portfolio totals, scoped to just this one unit; sums exactly to the parent
+    `RentWaterfall`'s own totals block, the same "parts sum to the whole" guarantee
+    `PortfolioRentWaterfall.properties` already has. Single-asset properties (no units)
+    never populate this — see `RentWaterfall.units`."""
+
+    unit_id: str
+    unit_number: str
+    label: str | None = None
+
+
+class RentWaterfall(RentWaterfallTotals):
+    """One property's rent waterfall for `period_from`/`period_to` (default: the latest
+    month with actual data on file, same convention as the rent roll's variance window —
+    see `RentRoll.period_from`/`period_to`). `period_from`/`period_to`/`unit_count` are
+    null/0 only when the property has no summarized unit-month data at all yet.
+
+    `units` (waterfall-followups item 4, optional): a per-unit breakdown of this same
+    total, ranked by total rent leakage (loss-to-lease + vacancy + collections) — biggest
+    under-collectors first, same convention as `PortfolioRentWaterfall.properties`. Empty
+    for a single-asset (unit-less) property, which has no per-unit basis to decompose."""
+
+    property_id: str
+    property_name: str
+    period_from: date | None = None
+    period_to: date | None = None
+    unit_count: int = 0
+    units: list[UnitRentWaterfallRow] = []
+
+
+class PropertyRentWaterfallRow(RentWaterfallTotals):
+    """One property's contribution to the portfolio rent waterfall (see
+    `PortfolioRentWaterfall.properties`) — same components, scoped to just that property's
+    units, for ranking which assets carry the most vacancy loss / loss-to-lease/collections
+    loss rather than only seeing the blended portfolio total."""
+
+    property_id: str
+    property_name: str
+    unit_count: int
+
+
+class PortfolioRentWaterfall(RentWaterfallTotals):
+    """Portfolio-wide rent waterfall (optionally `tags`-scoped, OR semantics), plus a
+    per-property breakdown (`properties`) whose components sum exactly to this totals
+    block. `period_from`/`period_to`/`unit_count` are null/0 only when the scope has no
+    summarized unit-month data at all yet."""
+
+    period_from: date | None = None
+    period_to: date | None = None
+    unit_count: int = 0
+    properties: list[PropertyRentWaterfallRow] = []
+
+
+# ---- Account general settings (migration 0019): display currency ----
+class GeneralSettingsIn(BaseModel):
+    """Account-wide display preferences. Currency is a pure symbol/locale toggle — it never
+    converts or changes any stored amount."""
+
+    currency: str = Field(pattern="^(USD|GBP)$")
+
+
+class GeneralSettingsOut(GeneralSettingsIn):
+    pass
+
+
+# ---- Compliance certificates (migration 0020): UK licensing / safety certs ----
+class PropertyCertificateIn(BaseModel):
+    """Create/update a compliance certificate on a property. ``expiry_date`` is required (the
+    status is derived from it); everything else is optional reference data."""
+
+    cert_type: str = Field(min_length=1, max_length=80)
+    expiry_date: date
+    issue_date: date | None = None
+    reference: str | None = Field(default=None, max_length=120)
+    provider: str | None = Field(default=None, max_length=120)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class PropertyCertificateOut(BaseModel):
+    """A stored certificate plus its property identity and a DERIVED status. ``status`` and
+    ``days_to_expiry`` are computed at read time from ``expiry_date`` versus today, never
+    stored, so they are always current. ``status``: 'valid' | 'expiring' (within the alert
+    window) | 'expired'."""
+
+    id: str
+    property_id: str
+    property_name: str
+    cert_type: str
+    expiry_date: date
+    issue_date: date | None = None
+    reference: str | None = None
+    provider: str | None = None
+    notes: str | None = None
+    status: str
+    days_to_expiry: int
+
+    class Config:
+        from_attributes = True

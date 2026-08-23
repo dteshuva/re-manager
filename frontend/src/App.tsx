@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { login, setUnauthorizedHandler } from "./api";
+import { getMe, login, setUnauthorizedHandler, signup } from "./api";
+import type { Me } from "./api";
+import { setActiveCurrency } from "./ui";
+import Compliance from "./views/Compliance";
 import Dashboard from "./views/Dashboard";
 import Entry from "./views/Entry";
 import ImportView from "./views/Import";
@@ -7,13 +10,16 @@ import Investments from "./views/Investments";
 import Manage from "./views/Manage";
 import PropertyDetail from "./views/PropertyDetail";
 import Reclassify from "./views/Reclassify";
+import RentRoll from "./views/RentRoll";
 
-type Tab = "dashboard" | "property" | "investments" | "entry" | "import" | "manage" | "reclassify";
+type Tab = "dashboard" | "property" | "investments" | "rentroll" | "compliance" | "entry" | "import" | "manage" | "reclassify";
 
 const TABS: { id: Tab; label: string; icon: string; title: string; sub: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▤", title: "Portfolio Dashboard", sub: "Consolidated monthly P&L across every property." },
   { id: "property", label: "Property", icon: "▦", title: "Property Detail", sub: "Drill into a single property and its units." },
   { id: "investments", label: "Investments", icon: "◈", title: "Investment Insights", sub: "Cap rate, cash-on-cash and DSCR per property." },
+  { id: "rentroll", label: "Rent Roll", icon: "⌂", title: "Rent Roll", sub: "Leases, tenants, contract vs. actual rent, and rollover risk." },
+  { id: "compliance", label: "Compliance", icon: "✔", title: "Compliance", sub: "Track licensing and safety certificates (EICR, Gas/CP12, EPC…) and their expiry." },
   { id: "entry", label: "Data Entry", icon: "✎", title: "Data Entry", sub: "Record and post monthly line items." },
   { id: "import", label: "Import", icon: "⤓", title: "Bulk Import", sub: "Load CSV or Excel statements." },
   { id: "manage", label: "Manage", icon: "⚙", title: "Manage", sub: "Properties, units and categories." },
@@ -26,9 +32,25 @@ const STORAGE_EMAIL_KEY = "re_email";
 export default function App() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(STORAGE_TOKEN_KEY));
   const [tab, setTab] = useState<Tab>("dashboard");
-  const [email, setEmail] = useState(() => localStorage.getItem(STORAGE_EMAIL_KEY) || "admin@example.com");
+  // Set by the Investments "missing acquisition data" nudge (or any future cross-tab link):
+  // switch to the Property tab pre-selected to a specific property. PropertyDetail consumes
+  // and clears it so a later manual property switch isn't overridden.
+  const [pendingPropertyId, setPendingPropertyId] = useState<string | null>(null);
+  const goToProperty = (propertyId: string) => {
+    setPendingPropertyId(propertyId);
+    setTab("property");
+  };
+  const [email, setEmail] = useState(() => localStorage.getItem(STORAGE_EMAIL_KEY) || "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // "signin" | "signup" — signing up creates a brand-new, empty ACCOUNT (its own
+  // properties/categories/thresholds), not another user inside an existing one.
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [accountName, setAccountName] = useState("");
+  const [busy, setBusy] = useState(false);
+  // Whose portfolio is on screen. Shown in the sidebar so a user with access to more
+  // than one login can tell at a glance which account's data they're looking at.
+  const [me, setMe] = useState<Me | null>(null);
 
   useEffect(() => {
     if (token) localStorage.setItem(STORAGE_TOKEN_KEY, token);
@@ -44,6 +66,21 @@ export default function App() {
     }).then((r) => { if (!r.ok) handleLogout(); });
   }, []);
 
+  // Resolve which account this token acts for (drives the sidebar's account label).
+  useEffect(() => {
+    if (!token) {
+      setMe(null);
+      return;
+    }
+    getMe(token)
+      .then((m) => {
+        setMe(m);
+        // Set the app-wide display currency before any view formats a figure.
+        setActiveCurrency(m.account_currency);
+      })
+      .catch(() => setMe(null));
+  }, [token]);
+
   // Central 401 handling: if the token expires mid-session (a tab left open past expiry),
   // route the user back to login instead of leaving every view to show its own generic
   // error banner. Registered once; the api module calls this on any 401 response.
@@ -52,21 +89,35 @@ export default function App() {
     return () => setUnauthorizedHandler(null);
   }, []);
 
-  async function handleLogin(e: React.FormEvent) {
+  async function handleAuth(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setBusy(true);
     try {
-      const t = await login(email, password);
+      const t =
+        mode === "signup"
+          ? await signup(email, password, accountName)
+          : await login(email, password);
       localStorage.setItem(STORAGE_EMAIL_KEY, email);
       setToken(t);
+      setPassword("");
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setBusy(false);
     }
+  }
+
+  function switchMode(next: "signin" | "signup") {
+    setMode(next);
+    setError(null);
+    setPassword("");
   }
 
   function handleLogout() {
     setToken(null);
     setPassword("");
+    setMe(null);
   }
 
   if (!token) {
@@ -85,17 +136,56 @@ export default function App() {
             </div>
           </div>
 
-          <h2 className="auth__title">Welcome back</h2>
+          <div className="auth__tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "signin"}
+              className={`auth__tab${mode === "signin" ? " is-active" : ""}`}
+              onClick={() => switchMode("signin")}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "signup"}
+              className={`auth__tab${mode === "signup" ? " is-active" : ""}`}
+              onClick={() => switchMode("signup")}
+            >
+              Create account
+            </button>
+          </div>
+
+          <h2 className="auth__title">
+            {mode === "signup" ? "Create your account" : "Welcome back"}
+          </h2>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            Sign in to your portfolio workspace.
+            {mode === "signup"
+              ? "Your account starts empty and is private to you — its own properties, categories and settings."
+              : "Sign in to your portfolio workspace."}
           </p>
 
-          <form onSubmit={handleLogin} className="auth__form">
+          <form onSubmit={handleAuth} className="auth__form">
+            {mode === "signup" && (
+              <label className="auth__field">
+                <span>Account name</span>
+                <input
+                  className="input"
+                  id="signup-account"
+                  value={accountName}
+                  onChange={(e) => setAccountName(e.target.value)}
+                  placeholder="Acme Property Group (optional)"
+                />
+              </label>
+            )}
             <label className="auth__field">
               <span>Email</span>
               <input
                 className="input"
                 id="login-email"
+                type="email"
+                autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@company.com"
@@ -107,13 +197,28 @@ export default function App() {
                 className="input"
                 id="login-password"
                 type="password"
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
               />
+              {mode === "signup" && (
+                <span className="auth__hint">At least 8 characters.</span>
+              )}
             </label>
-            <button className="btn btn-primary" type="submit" style={{ justifyContent: "center", marginTop: 4 }}>
-              Sign in
+            <button
+              className="btn btn-primary"
+              type="submit"
+              disabled={busy}
+              style={{ justifyContent: "center", marginTop: 4 }}
+            >
+              {busy
+                ? mode === "signup"
+                  ? "Creating account…"
+                  : "Signing in…"
+                : mode === "signup"
+                  ? "Create account"
+                  : "Sign in"}
             </button>
             {error && <p className="auth__error">{error}</p>}
           </form>
@@ -123,7 +228,7 @@ export default function App() {
   }
 
   const active = TABS.find((t) => t.id === tab)!;
-  const userEmail = email || "admin@example.com";
+  const userEmail = me?.email || email;
   const initials = userEmail.slice(0, 2).toUpperCase();
 
   return (
@@ -155,7 +260,15 @@ export default function App() {
         <div className="sidebar__footer">
           <div className="sidebar__user">
             <span className="avatar">{initials}</span>
-            <span className="sidebar__user-name">{userEmail}</span>
+            <span className="sidebar__user-meta">
+              <span className="sidebar__user-name">{userEmail}</span>
+              {/* Which account's data is on screen — the tenancy boundary made visible. */}
+              {me?.account_name && (
+                <span className="sidebar__user-account" title={me.account_name}>
+                  {me.account_name}
+                </span>
+              )}
+            </span>
           </div>
           <button className="nav-item" onClick={handleLogout}>
             <span className="nav-item__icon" aria-hidden="true">⏻</span>
@@ -174,8 +287,16 @@ export default function App() {
 
         <div className="content">
           {tab === "dashboard" && <Dashboard token={token} />}
-          {tab === "property" && <PropertyDetail token={token} />}
-          {tab === "investments" && <Investments token={token} />}
+          {tab === "property" && (
+            <PropertyDetail
+              token={token}
+              initialPropertyId={pendingPropertyId}
+              onConsumeInitial={() => setPendingPropertyId(null)}
+            />
+          )}
+          {tab === "investments" && <Investments token={token} onGoToProperty={goToProperty} />}
+          {tab === "rentroll" && <RentRoll token={token} />}
+          {tab === "compliance" && <Compliance token={token} />}
           {tab === "entry" && <Entry token={token} />}
           {tab === "import" && <ImportView token={token} />}
           {tab === "manage" && <Manage token={token} />}

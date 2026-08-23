@@ -19,9 +19,9 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_db
-from app.deps import get_current_user
+from app.deps import Scope, get_scope
 from app.importer import apply_import
-from app.models import Category, MonthlyRecord, Property, Unit, User
+from app.models import Category, MonthlyRecord, Property, Unit
 from app.parsing import TEMPLATE_CSV, parse_table
 from app.schemas import (
     ImportReport,
@@ -48,7 +48,7 @@ def _check_on_error(on_error: str) -> None:
 
 
 @router.get("/template", response_class=PlainTextResponse)
-def import_template(_u: User = Depends(get_current_user)) -> str:
+def import_template(scope: Scope = Depends(get_scope)) -> str:
     """A ready-to-edit CSV template (Property, Unit, Month, Category, Amount)."""
     return TEMPLATE_CSV
 
@@ -59,11 +59,11 @@ def import_rows(
     dry_run: bool = False,
     on_error: str = "abort",
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
     """Apply structured rows directly (no file). This is the seam every parser targets."""
     _check_on_error(on_error)
-    return apply_import(db, rows, dry_run=dry_run, on_error=on_error)
+    return apply_import(db, scope.account_id, rows, dry_run=dry_run, on_error=on_error)
 
 
 @router.post("/file", response_model=ImportReport)
@@ -73,7 +73,7 @@ async def import_file(
     dry_run: bool = Form(False),
     on_error: str = Form("abort"),
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
     """Parse a CSV/Excel upload with a column mapping, then apply via the import core."""
     _check_on_error(on_error)
@@ -97,7 +97,10 @@ async def import_file(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=report.model_dump())
 
     # Parser row-errors are merged into the core so they count toward the abort decision.
-    return apply_import(db, rows, dry_run=dry_run, on_error=on_error, extra_errors=parse_errors)
+    return apply_import(
+        db, scope.account_id, rows, dry_run=dry_run, on_error=on_error,
+        extra_errors=parse_errors,
+    )
 
 
 def _resolve_preview(ex, prop_by_name: dict, cat_by_name: dict) -> StatementPreview:
@@ -149,7 +152,7 @@ def _extract_one(content: bytes, props, cats, settings):
 async def extract_statement_pdf(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
     """Parse a single PDF statement into a review preview. Writes nothing; reads locally
     (heuristic, or a local Ollama model if one is running — both free) and flags anything
@@ -162,8 +165,14 @@ async def extract_statement_pdf(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="The uploaded file is empty.")
 
     settings = get_settings()
-    props = db.scalars(select(Property).order_by(Property.name)).all()
-    cats = db.scalars(select(Category)).all()
+    props = db.scalars(
+        select(Property)
+        .where(Property.account_id == scope.account_id)
+        .order_by(Property.name)
+    ).all()
+    cats = db.scalars(
+        select(Category).where(Category.account_id == scope.account_id)
+    ).all()
     try:
         ex = _extract_one(content, props, cats, settings)
     except Exception as exc:  # pdfplumber raises varied errors on malformed PDFs
@@ -182,7 +191,7 @@ async def extract_statement_pdf(
 async def extract_statements_batch(
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
     """Parse many PDF statements at once (mixed months/properties). Each file is parsed
     independently — a bad PDF becomes a per-file error, never a failed batch — and the
@@ -195,8 +204,14 @@ async def extract_statements_batch(
             detail=f"Too many files ({len(files)}). Upload at most {settings.statement_max_files} at once.",
         )
 
-    props = db.scalars(select(Property).order_by(Property.name)).all()
-    cats = db.scalars(select(Category)).all()
+    props = db.scalars(
+        select(Property)
+        .where(Property.account_id == scope.account_id)
+        .order_by(Property.name)
+    ).all()
+    cats = db.scalars(
+        select(Category).where(Category.account_id == scope.account_id)
+    ).all()
     prop_by_name = {p.name.strip().lower(): p for p in props}
     cat_by_name = {c.name.strip().lower(): c for c in cats}
 
@@ -244,7 +259,7 @@ async def extract_statements_batch(
 def whats_missing(
     month: date = Query(..., description="Month to check (any day; floored to month start)"),
     db: Session = Depends(get_db),
-    _u: User = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
 ):
     """List property/unit scopes that have no posted data for the given month.
 
@@ -257,12 +272,16 @@ def whats_missing(
     # Scopes that already have data this month (record with >=1 line item).
     recs = db.scalars(
         select(MonthlyRecord)
-        .where(MonthlyRecord.month == m)
+        .where(MonthlyRecord.account_id == scope.account_id, MonthlyRecord.month == m)
     ).all()
     have = {(r.property_id, r.unit_id) for r in recs if r.line_items}
 
     missing: list[MissingScope] = []
-    props = db.scalars(select(Property).order_by(Property.name)).all()
+    props = db.scalars(
+        select(Property)
+        .where(Property.account_id == scope.account_id)
+        .order_by(Property.name)
+    ).all()
     for p in props:
         units = (
             db.scalars(select(Unit).where(Unit.property_id == p.id).order_by(Unit.unit_number)).all()

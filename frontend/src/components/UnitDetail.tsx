@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getUnitDetail, type UnitDetail as UnitDetailData } from "../api";
 import PnlTrendChart from "./PnlTrendChart";
-import { fmtCurrency, fmtMonth } from "../ui";
+import { fmtCurrency, fmtMonth, leaseStatusPillClass, statusPillClass } from "../ui";
 
 // Level 3 — Unit detail, drilled into from the property's unit roster or attention feed.
 // Shows the unit's month-by-month P&L (unit-specific items only) + a T12 trend, with an
@@ -36,9 +36,14 @@ export default function UnitDetail({
             Unit {d.unit_number}
             {d.label ? ` — ${d.label}` : ""}
           </span>
-          <span className={`pill ${d.status === "vacant" ? "pill--vacant" : "pill--occupied"}`} style={{ marginLeft: 10 }}>
+          <span className={statusPillClass(d.status)} style={{ marginLeft: 10 }}>
             {d.status}
           </span>
+          {d.lease_status && (
+            <span className={leaseStatusPillClass(d.lease_status)} style={{ marginLeft: 6 }} title="Current lease state (today)">
+              lease: {d.lease_status}
+            </span>
+          )}
           <span className="muted" style={{ marginLeft: 10, fontSize: 13 }}>{d.property_name}</span>
         </div>
         <button className="btn" onClick={onClose}>✕ Close</button>
@@ -47,7 +52,10 @@ export default function UnitDetail({
       <p className="hint">
         Property-level shared costs (capex, debt service) are recorded at the property tier and
         are <strong>not allocated</strong> to this unit — so unit cash flow is not a pro-rata
-        share of property cash flow.
+        share of property cash flow. The status pill above is this unit's most recent monthly
+        record; the "lease" pill is its current lease state as of today (see the Rent Roll tab
+        for full lease detail) — the two are independent and can disagree.
+        {d.lease_tenant_name && <> Current tenant on file: <strong>{d.lease_tenant_name}</strong>.</>}
       </p>
 
       {t12.length > 0 && <PnlTrendChart data={t12} height={220} />}
@@ -66,7 +74,7 @@ export default function UnitDetail({
         </thead>
         <tbody>
           {d.months.map((m) => (
-            <tr key={m.month} className={m.status === "vacant" ? "row-muted" : undefined}>
+            <tr key={m.month} className={m.status !== "occupied" ? "row-muted" : undefined}>
               <td>{fmtMonth(m.month)}</td>
               <td>{fmtCurrency(m.gross_rent)}</td>
               <td>{fmtCurrency(m.operating_expenses)}</td>
@@ -74,9 +82,7 @@ export default function UnitDetail({
               <td>{fmtCurrency(m.noi)}</td>
               <td className={m.cash_flow < 0 ? "value-negative" : undefined}>{fmtCurrency(m.cash_flow)}</td>
               <td>
-                <span className={`pill ${m.status === "vacant" ? "pill--vacant" : "pill--occupied"}`}>
-                  {m.status}
-                </span>
+                <span className={statusPillClass(m.status)}>{m.status}</span>
               </td>
             </tr>
           ))}
