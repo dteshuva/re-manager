@@ -24,24 +24,42 @@ export default function PeriodSelector({
   onChange: (range: PeriodRange) => void;
   defaultMode?: Mode;
 }) {
+  // The furthest month that exists at all. This is only ever a BOUND: it's how far the steppers
+  // and the custom range are allowed to reach, so months scheduled ahead stay navigable.
   const latest = availableMonths.length
     ? availableMonths[availableMonths.length - 1].slice(0, 7)
     : currentYm();
   const earliest = availableMonths.length ? availableMonths[0].slice(0, 7) : currentYm();
 
+  // The month everything DEFAULTS to: the latest one that has actually happened.
+  //
+  // These two used to be the same value, which was fine while data only ever arrived after the
+  // fact. A recurring cost can now be posted ahead (a portfolio loan payment scheduled for the
+  // next two years), and those months are real rows in the P&L — so `latest` ran away into the
+  // future and every screen opened on a month holding a mortgage and no rent. The period the
+  // app opens on has to be a month you could actually have closed; reaching a scheduled one is
+  // a deliberate act, not the landing page.
+  //
+  // Falls back to `latest` when EVERY month on file is in the future (a portfolio whose only
+  // data so far is scheduled), since showing nothing at all would be worse.
+  const nowYm = currentYm();
+  const actualMonths = availableMonths.filter((m) => m.slice(0, 7) <= nowYm);
+  const latestActual = actualMonths.length ? actualMonths[actualMonths.length - 1].slice(0, 7) : latest;
+
   const [mode, setMode] = useState<Mode>(defaultMode);
-  const [asOf, setAsOf] = useState(latest);
+  const [asOf, setAsOf] = useState(latestActual);
   const [from, setFrom] = useState(earliest);
-  const [to, setTo] = useState(latest);
+  const [to, setTo] = useState(latestActual);
 
   // availableMonths loads async; once the real data range arrives, snap the pickers to it
-  // (so e.g. Month defaults to the latest data month, not today's calendar month).
+  // (so e.g. Month defaults to the latest actual data month, not today's calendar month and
+  // not a month that has only been scheduled).
   useEffect(() => {
-    setAsOf(latest);
+    setAsOf(latestActual);
     setFrom(earliest);
-    setTo(latest);
+    setTo(latestActual);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [earliest, latest]);
+  }, [earliest, latestActual]);
 
   const range = useMemo<PeriodRange>(() => {
     switch (mode) {
@@ -55,9 +73,12 @@ export default function PeriodSelector({
         return { from: toIso(addMonths(asOf, -11)), to: toIso(asOf) };
       case "all":
       default:
-        return { from: toIso(earliest), to: toIso(latest) };
+        // "All" means all of the history, not the schedule: ending it at `latestActual` keeps
+        // costs posted ahead out of a total that reads as what the portfolio has done so far.
+        // The Range mode reaches them when that's genuinely what you want.
+        return { from: toIso(earliest), to: toIso(latestActual) };
     }
-  }, [mode, asOf, from, to, earliest, latest]);
+  }, [mode, asOf, from, to, earliest, latestActual]);
 
   // A <input type="month"> reports every keystroke, so mid-typing a year yields partial
   // values like "0002-06" before "2024-06". Emitting those fires requests for nonsense

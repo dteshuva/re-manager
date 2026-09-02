@@ -3,59 +3,7 @@
 > vite
 
 
-  VITE v5.4.21  ready in 643 ms
+  VITE v5.4.21  ready in 580 ms
 
   ➜  Local:   http://localhost:5173/
   ➜  Network: use --host to expose
-11:14:49 AM [vite] hmr update /src/App.tsx, /src/views/Entry.tsx, /src/views/Investments.tsx, /src/views/Reclassify.tsx, /src/views/Dashboard.tsx, /src/views/PropertyDetail.tsx, /src/views/Manage.tsx, /src/views/Import.tsx, /src/views/RentRoll.tsx, /src/components/UnitDetail.tsx, /src/components/AttentionSettings.tsx, /src/components/InvestmentPanel.tsx
-11:14:53 AM [vite] hmr update /src/App.tsx, /src/views/Entry.tsx, /src/views/Investments.tsx, /src/views/Reclassify.tsx, /src/views/Dashboard.tsx, /src/views/PropertyDetail.tsx, /src/views/Manage.tsx, /src/views/Import.tsx, /src/views/RentRoll.tsx, /src/components/UnitDetail.tsx, /src/components/AttentionSettings.tsx, /src/components/InvestmentPanel.tsx
-11:14:59 AM [vite] hmr update /src/App.tsx, /src/views/Entry.tsx, /src/views/Investments.tsx, /src/views/Reclassify.tsx, /src/views/Dashboard.tsx, /src/views/PropertyDetail.tsx, /src/views/Manage.tsx, /src/views/Import.tsx, /src/views/RentRoll.tsx, /src/components/UnitDetail.tsx, /src/components/AttentionSettings.tsx, /src/components/InvestmentPanel.tsx
-11:15:16 AM [vite] hmr update /src/views/RentRoll.tsx
-11:15:22 AM [vite] hmr update /src/views/RentRoll.tsx
-11:15:31 AM [vite] hmr update /src/views/RentRoll.tsx
-11:15:37 AM [vite] hmr update /src/views/RentRoll.tsx
-11:15:54 AM [vite] hmr update /src/views/RentRoll.tsx
-11:16:06 AM [vite] hmr update /src/views/RentRoll.tsx
-11:18:32 AM [vite] hmr update /src/views/RentRoll.tsx
-11:18:39 AM [vite] hmr update /src/views/RentRoll.tsx
-11:31:20 AM [vite] hmr update /src/App.tsx, /src/views/Entry.tsx, /src/views/Investments.tsx, /src/views/Reclassify.tsx, /src/views/Dashboard.tsx, /src/views/PropertyDetail.tsx, /src/views/Manage.tsx, /src/views/Import.tsx, /src/views/RentRoll.tsx, /src/components/UnitDetail.tsx, /src/components/AttentionSettings.tsx, /src/components/InvestmentPanel.tsx
-11:31:33 AM [vite] hmr update /src/App.tsx, /src/views/Entry.tsx, /src/views/Investments.tsx, /src/views/Reclassify.tsx, /src/views/Dashboard.tsx, /src/views/PropertyDetail.tsx, /src/views/Manage.tsx, /src/views/Import.tsx, /src/views/RentRoll.tsx, /src/components/UnitDetail.tsx, /src/components/AttentionSettings.tsx, /src/components/InvestmentPanel.tsx
-11:31:40 AM [vite] hmr update /src/App.tsx, /src/views/Entry.tsx, /src/views/Investments.tsx, /src/views/Reclassify.tsx, /src/views/Dashboard.tsx, /src/views/PropertyDetail.tsx, /src/views/Manage.tsx, /src/views/Import.tsx, /src/views/RentRoll.tsx, /src/components/UnitDetail.tsx, /src/components/AttentionSettings.tsx, /src/components/InvestmentPanel.tsx
-11:31:50 AM [vite] hmr update /src/views/RentRoll.tsx
-11:31:56 AM [vite] hmr update /src/views/RentRoll.tsx
-11:32:09 AM [vite] hmr update /src/views/RentRoll.tsx
-11:32:19 AM [vite] hmr update /src/views/RentRoll.tsx
-11:32:38 AM [vite] hmr update /src/views/RentRoll.tsx
-11:32:52 AM [vite] hmr update /src/views/RentRoll.tsx
-11:32:58 AM [vite] hmr update /src/views/RentRoll.tsx
-11:36:07 AM [vite] hmr update /src/App.tsx, /src/views/Entry.tsx, /src/views/Investments.tsx, /src/views/Reclassify.tsx, /src/views/Dashboard.tsx, /src/views/PropertyDetail.tsx, /src/views/Manage.tsx, /src/views/Import.tsx, /src/views/RentRoll.tsx, /src/components/UnitDetail.tsx, /src/components/AttentionSettings.tsx, /src/components/InvestmentPanel.tsx
-11:36:22 AM [vite] hmr update /src/views/RentRoll.tsx
-11:36:31 AM [vite] hmr update /src/views/RentRoll.tsx
-11:36:48 AM [vite] hmr update /src/views/RentRoll.tsx
-1:36:27 PM [vite] hmr update /src/App.tsx, /src/views/Entry.tsx, /src/views/Investments.tsx, /src/views/Reclassify.tsx, /src/views/Dashboard.tsx, /src/views/PropertyDetail.tsx, /src/views/Manage.tsx, /src/views/Import.tsx, /src/views/RentRoll.tsx, /src/components/UnitDetail.tsx, /src/components/AttentionSettings.tsx, /src/components/InvestmentPanel.tsx
-1:38:12 PM [vite] hmr update /src/views/Investments.tsx
-1:38:22 PM [vite] hmr update /src/views/Investments.tsx
-1:38:26 PM [vite] hmr update /src/views/Investments.tsx
-1:42:33 PM [vite] hmr update /src/views/RentRoll.tsx
-4:52:16 PM [vite] hmr update /src/views/RentRoll.tsx
-4:52:24 PM [vite] hmr update /src/views/RentRoll.tsx
-4:52:56 PM [vite] hmr update /src/views/RentRoll.tsx
-4:53:03 PM [vite] hmr update /src/views/RentRoll.tsx
-4:53:11 PM [vite] hmr update /src/views/RentRoll.tsx
-5:42:47 PM [vite] hmr update /src/views/RentRoll.tsx
-5:42:53 PM [vite] hmr update /src/views/RentRoll.tsx
-5:42:58 PM [vite] hmr update /src/views/RentRoll.tsx
-5:43:04 PM [vite] hmr update /src/views/RentRoll.tsx
-5:43:16 PM [vite] hmr update /src/views/RentRoll.tsx
-5:43:35 PM [vite] hmr update /src/views/RentRoll.tsx
-5:43:43 PM [vite] hmr update /src/views/RentRoll.tsx
-5:43:51 PM [vite] hmr update /src/views/RentRoll.tsx
-5:43:57 PM [vite] hmr update /src/views/RentRoll.tsx
-6:32:26 PM [vite] hmr update /src/App.tsx, /src/views/Entry.tsx, /src/views/Investments.tsx, /src/views/Reclassify.tsx, /src/views/Dashboard.tsx, /src/views/PropertyDetail.tsx, /src/views/Manage.tsx, /src/views/Import.tsx, /src/views/RentRoll.tsx, /src/components/UnitDetail.tsx, /src/components/AttentionSettings.tsx, /src/components/InvestmentPanel.tsx
-6:32:47 PM [vite] hmr update /src/App.tsx
-6:33:01 PM [vite] hmr update /src/App.tsx
-6:33:07 PM [vite] hmr update /src/App.tsx
-6:33:25 PM [vite] hmr update /src/App.tsx
-6:33:25 PM [vite] hmr update /src/styles.css
-7:36:17 PM [vite] hmr update /src/App.tsx, /src/views/Entry.tsx, /src/views/Investments.tsx, /src/views/Reclassify.tsx, /src/views/Dashboard.tsx, /src/views/PropertyDetail.tsx, /src/views/Manage.tsx, /src/views/Import.tsx, /src/views/RentRoll.tsx, /src/components/UnitDetail.tsx, /src/components/AttentionSettings.tsx, /src/components/InvestmentPanel.tsx
-7:36:18 PM [vite] hmr update /src/components/AttentionFeed.tsx

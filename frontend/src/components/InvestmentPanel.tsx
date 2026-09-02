@@ -128,6 +128,7 @@ export default function InvestmentPanel({ token, propertyId }: { token: string; 
 
       {error && <p className="alert-error">{error}</p>}
 
+      {m && hasInputs && <AcquisitionNote m={m} />}
       {m && hasInputs && <MetricCards m={m} />}
       {m && hasInputs && <DebtCheck m={m} />}
       {m && hasInputs && <ContextLine m={m} />}
@@ -190,6 +191,22 @@ export default function InvestmentPanel({ token, propertyId }: { token: string; 
         </p>
       )}
     </section>
+  );
+}
+
+// When these figures came from a bulk purchase, say so. Closing costs and loan are then this
+// property's allocated share of a deal-wide total, not figures measured for it alone — and
+// hand-editing them here makes the deal's members stop summing to the deal. Cap rate is
+// unaffected either way: it uses only the agreed price, which is real per property.
+function AcquisitionNote({ m }: { m: InvestmentMetrics }) {
+  if (!m.acquisition_name) return null;
+  return (
+    <p className="hint" style={{ marginTop: 10 }}>
+      Part of the <strong>{m.acquisition_name}</strong> portfolio purchase. The closing costs and loan shown here are
+      this property's allocated share of that deal's totals, so cash-on-cash and DSCR reflect its slice of the blanket
+      loan. Cap rate uses the agreed price and is unaffected. Edit the deal on the{" "}
+      <strong>Investments</strong> tab to re-split it across every property at once.
+    </p>
   );
 }
 

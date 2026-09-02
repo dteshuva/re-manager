@@ -348,6 +348,21 @@ class LineItem(Base):
     # Optional per-line override. NULL ⇒ use the category's default_classification.
     classification: Mapped[str | None] = mapped_column(String)  # DB type: classification enum
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, server_default=text("0"))
+    # Migration 0023: this line is stated as a RATE, not a figure — "8% of rent" (a management
+    # fee, most often). NULL = an ordinary fixed amount, which every pre-existing row is.
+    # When set, ``amount`` is DERIVED from the rent in this record's scope and rewritten by
+    # :func:`app.percent_lines.apply_percentage_lines` on every write to the property-month,
+    # so the fee follows rent instead of going stale. ``amount`` remains the only thing the
+    # P&L views, rollups and exports read; this column is intent, not a second ledger.
+    rate_pct: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))
+    # Migration 0022: which shared expense POSTED this line, if any. NULL = hand-entered or
+    # imported (every pre-existing row). This is what makes a shared expense re-postable: it
+    # identifies exactly the lines that arrangement owns, so a re-post updates them in place,
+    # an un-post removes them, and a hand-entered line in the same category is detected as a
+    # conflict rather than silently overwritten.
+    shared_expense_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("shared_expense.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -362,6 +377,10 @@ class LineItem(Base):
     __table_args__ = (
         # Idempotent import key: re-importing the same month+category overwrites in place.
         UniqueConstraint("monthly_record_id", "category_id", name="line_items_record_category_key"),
+        CheckConstraint(
+            "rate_pct IS NULL OR (rate_pct >= 0 AND rate_pct <= 100)",
+            name="line_items_rate_pct_range",
+        ),
         # Migration 0017's core isolation invariant: a line item's record AND its category
         # must both belong to the line item's account. Because reclassifying a category
         # recomputes NOI, letting account A's line item point at account B's category would
@@ -377,6 +396,14 @@ class LineItem(Base):
             ["account_id", "category_id"],
             ["categories.account_id", "categories.id"],
             name="line_items_category_in_account_fk",
+        ),
+        # Same invariant one entity further out (migration 0022): a line item can only be
+        # attributed to a shared expense of its OWN account.
+        ForeignKeyConstraint(
+            ["account_id", "shared_expense_id"],
+            ["shared_expense.account_id", "shared_expense.id"],
+            name="line_items_shared_expense_in_account_fk",
+            ondelete="SET NULL",
         ),
     )
 
@@ -399,6 +426,12 @@ class PropertyInvestment(Base):
     closing_costs: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, server_default=text("0"))
     loan_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, server_default=text("0"))
     purchase_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # Set when this row was produced by a bulk/portfolio purchase (migration 0021): the
+    # closing costs and loan above are then this property's ALLOCATED share of one deal-wide
+    # total, not figures entered for it alone. NULL = an ordinary standalone purchase.
+    acquisition_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("portfolio_acquisition.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -408,6 +441,194 @@ class PropertyInvestment(Base):
         CheckConstraint("purchase_price >= 0", name="property_investment_purchase_price_nonneg"),
         CheckConstraint("closing_costs >= 0", name="property_investment_closing_costs_nonneg"),
         CheckConstraint("loan_amount >= 0", name="property_investment_loan_amount_nonneg"),
+    )
+
+
+class PortfolioAcquisition(Base):
+    """A bulk ("portfolio") purchase: one deal covering several properties (migration 0021).
+
+    Each property in such a deal has its own agreed price, but the closing costs are a single
+    settlement figure and the debt is one blanket loan over the whole package — costs that
+    belong to N properties at once and have nowhere to live on a per-property row. This table
+    holds the deal as the deal: the shared ``purchase_date``, the ONE ``total_closing_costs``,
+    the ONE ``total_loan_amount``, and the ``allocation_method`` that says how to spread them.
+
+    The split is still WRITTEN DOWN onto each member's ``property_investment`` row (linked back
+    by ``acquisition_id``), so every downstream metric reads exactly one place and needs no
+    knowledge of bulk deals. Because pro-rata shares sum back to the true totals, the portfolio
+    aggregates come out identical to modelling the deal as one entity.
+
+    ``allocation_method``:
+      * ``price``  — pro-rata by each property's agreed purchase price (the default, and what
+        lenders and accountants use for blanket debt).
+      * ``equal``  — split evenly across members, for deals where price is a poor proxy.
+      * ``custom`` — the operator supplies each share directly (e.g. the lender's per-property
+        release prices); the totals here are then the SUM of those shares, so they stay true.
+
+    Deleting a deal UNGROUPS it — ``ON DELETE SET NULL`` leaves each member's allocated figures
+    in place, since removing a bulk purchase should never wipe the acquisition data the return
+    metrics depend on."""
+
+    __tablename__ = "portfolio_acquisition"
+
+    id: Mapped[str] = UUID_PK()
+    account_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    purchase_date: Mapped[date] = mapped_column(Date, nullable=False)
+    total_closing_costs: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, server_default=text("0")
+    )
+    total_loan_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, server_default=text("0")
+    )
+    allocation_method: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'price'")
+    )
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("length(trim(name)) > 0", name="portfolio_acquisition_name_nonempty"),
+        CheckConstraint("total_closing_costs >= 0", name="portfolio_acquisition_closing_nonneg"),
+        CheckConstraint("total_loan_amount >= 0", name="portfolio_acquisition_loan_nonneg"),
+        CheckConstraint(
+            "allocation_method IN ('price', 'equal', 'custom')",
+            name="portfolio_acquisition_method_known",
+        ),
+    )
+
+
+class SharedExpense(Base):
+    """A cost incurred for several properties at once, stored once and split across them
+    (migration 0022) — a blanket-loan payment, a multi-property insurance policy, one
+    management retainer.
+
+    The ledger is per-property by construction: a ``line_item`` hangs off a ``monthly_record``
+    keyed to exactly one property. A bill that belongs to N properties therefore has nowhere
+    to live, and the operator had to divide it by hand and re-type the share onto every
+    property, every month. This table holds the ARRANGEMENT — the category it posts to, the
+    periodic ``amount``, the members, and how to spread it — so the division is entered once
+    and repeated by the machine.
+
+    Posting is not a special case downstream. It writes an ordinary line item onto each
+    member's property-tier record (``unit_id IS NULL``, where shared costs already live), so
+    the P&L views, NOI, cash flow, exports and variance keep reading exactly one place and
+    need no knowledge that shared expenses exist. Because :mod:`app.allocation` guarantees the
+    shares sum back to ``amount`` to the cent, the portfolio total is exactly the bill.
+
+    ``allocation_method``:
+      * ``equal``  — every member carries the same share (the default: what a portfolio loan
+        payment or a blanket policy is usually apportioned as when nothing better is known).
+      * ``price``  — pro-rata by each member's ``property_investment.purchase_price``; the
+        conventional basis for debt service on a blanket loan.
+      * ``units``  — pro-rata by rentable unit count, for costs that scale with doors. A
+        unit-less "single" property counts as one dwelling, never zero.
+      * ``custom`` — the operator supplies each member's share directly (e.g. the insurer's
+        per-building premium); ``amount`` is then the SUM of those shares, so it stays true.
+
+    ``price`` and ``units`` weights are resolved AT POST TIME from the current portfolio, so a
+    property that has since been repriced or gained doors carries its current share rather
+    than one frozen when the arrangement was created.
+    """
+
+    __tablename__ = "shared_expense"
+
+    id: Mapped[str] = UUID_PK()
+    account_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    category_id: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False)
+    # Optional per-line override, carried onto every line item this arrangement posts —
+    # same semantics as LineItem.classification. NULL ⇒ the category's default.
+    classification: Mapped[str | None] = mapped_column(String)  # DB type: classification enum
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, server_default=text("0"))
+    allocation_method: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'equal'")
+    )
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    members: Mapped[list[SharedExpenseMember]] = relationship(
+        back_populates="shared_expense",
+        cascade="all, delete-orphan",
+        foreign_keys="SharedExpenseMember.shared_expense_id",
+    )
+
+    __table_args__ = (
+        CheckConstraint("length(trim(name)) > 0", name="shared_expense_name_nonempty"),
+        CheckConstraint("amount >= 0", name="shared_expense_amount_nonneg"),
+        CheckConstraint(
+            "allocation_method IN ('equal', 'price', 'units', 'custom')",
+            name="shared_expense_method_known",
+        ),
+        # Migration 0017's invariant: an arrangement may only post into its own account's
+        # category, because reclassifying a category moves NOI.
+        ForeignKeyConstraint(
+            ["account_id", "category_id"],
+            ["categories.account_id", "categories.id"],
+            name="shared_expense_category_in_account_fk",
+        ),
+        # Target for the composite FKs on shared_expense_member and line_items.
+        UniqueConstraint("account_id", "id", name="shared_expense_account_id_id_key"),
+    )
+
+
+class SharedExpenseMember(Base):
+    """One property covered by a :class:`SharedExpense` (migration 0022).
+
+    ``custom_share`` is meaningful only under ``allocation_method = 'custom'``, where the
+    operator states each property's share outright; under the computed methods it is ignored.
+
+    ``account_id`` is carried rather than resolved through the parent purely so the composite
+    FKs can exist: they make a member whose property belongs to a DIFFERENT account than the
+    arrangement unrepresentable at the database level, not merely rejected by app code."""
+
+    __tablename__ = "shared_expense_member"
+
+    shared_expense_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("shared_expense.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    property_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    account_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    custom_share: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # foreign_keys is spelled out for the same reason as MonthlyRecord.line_items: this table
+    # reaches shared_expense by two paths (the plain FK and the composite account-scoped one).
+    shared_expense: Mapped[SharedExpense] = relationship(
+        back_populates="members", foreign_keys=[shared_expense_id]
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "custom_share IS NULL OR custom_share >= 0",
+            name="shared_expense_member_share_nonneg",
+        ),
+        ForeignKeyConstraint(
+            ["account_id", "shared_expense_id"],
+            ["shared_expense.account_id", "shared_expense.id"],
+            name="shared_expense_member_expense_in_account_fk",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["account_id", "property_id"],
+            ["properties.account_id", "properties.id"],
+            name="shared_expense_member_property_in_account_fk",
+            ondelete="CASCADE",
+        ),
     )
 
 

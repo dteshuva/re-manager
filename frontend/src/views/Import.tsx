@@ -19,6 +19,7 @@ import {
   type ImportRowInput,
   type MissingScope,
   type Property,
+  type StatementFileNote,
   type StatementRow,
 } from "../api";
 import { btn, btnPrimary, card, input } from "../ui";
@@ -235,11 +236,20 @@ function uniqueCI(values: string[]): string[] {
 // Batch PDF statement import: upload many statements at once (mixed months/properties),
 // resolve shared new properties/categories ONCE, review each, then upload them all. Every
 // statement flows through the same idempotent import core (`/import/rows`) the CSV path uses.
+//
+// One PDF is not always one statement. A portfolio agent's RENT ROLL lists every property on
+// its own line and charges the portfolio once at the bottom; the server splits it into one
+// statement per property, so twelve cards can arrive from a single upload and this component
+// needs no separate mode for them. What it does add is a per-FILE panel — the rent roll's
+// important facts (do the rents add back to the stated total, which charges were split across
+// the properties, what named nobody) belong to the file, not to any one property — and a mark
+// on the rows whose figure was COMPUTED here rather than printed on the statement.
 type BatchRow = StatementRow & { include: boolean; key: number };
 
 type Stmt = {
   id: number;
   filename: string;
+  sourceFile: string | null; // the rent roll this property was split out of, if any
   error: string | null;
   backend: string;
   warnings: string[];
@@ -258,6 +268,7 @@ function StatementBatchSection({ token }: { token: string }) {
   const [properties, setProperties] = useState<Property[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [stmts, setStmts] = useState<Stmt[]>([]);
+  const [files, setFiles] = useState<StatementFileNote[]>([]);
   const [newCatCls, setNewCatCls] = useState<Record<string, Classification>>({});
   const [newPropType, setNewPropType] = useState<Record<string, "single" | "multifamily">>({});
   // Decisions on NEW items, keyed by lowercased name. Absent = pending (not used). A decision
@@ -288,6 +299,7 @@ function StatementBatchSection({ token }: { token: string }) {
     setBusy(true);
     setError(null);
     setUploaded(false);
+    setFiles([]);
     setCatDecision({});
     setPropDecision({});
     try {
@@ -299,6 +311,7 @@ function StatementBatchSection({ token }: { token: string }) {
         return {
           id: id++,
           filename: it.filename,
+          sourceFile: it.source_file,
           error: it.error,
           backend: pv?.backend ?? "",
           warnings: pv?.warnings ?? [],
@@ -312,6 +325,7 @@ function StatementBatchSection({ token }: { token: string }) {
         };
       });
       setStmts(syncProps(next, p));
+      setFiles(res.files);
       const seedCls: Record<string, Classification> = {};
       for (const u of res.unknown_categories) {
         if (u.suggested_classification) seedCls[u.name] = u.suggested_classification;
@@ -358,6 +372,20 @@ function StatementBatchSection({ token }: { token: string }) {
       .filter((s) => !s.propertyId && s.detectedProperty && !propByName.has(s.detectedProperty.trim().toLowerCase()))
       .map((s) => s.detectedProperty as string),
   );
+  // Rows carrying a property's share of a portfolio-wide charge. They're included by
+  // default — leaving them out understates every property's costs by the same fee the owner
+  // actually paid — but they're the one figure on the page this app computed rather than
+  // read, so dropping them all has to be one click, not twelve.
+  const allocated = active.flatMap((s) => s.rows.filter((r) => r.kind === "allocated"));
+  const allocatedOn = allocated.some((r) => r.include);
+  const setAllocatedIncluded = (on: boolean) =>
+    setStmts((ss) =>
+      ss.map((s) => ({
+        ...s,
+        rows: s.rows.map((r) => (r.kind === "allocated" ? { ...r, include: on } : r)),
+      })),
+    );
+
   const pendingCatCount = unknownCats.filter((n) => catState(n) === "pending").length;
   const pendingPropCount = unknownProps.filter((n) => !propDecision[n.trim().toLowerCase()]).length;
 
@@ -505,9 +533,11 @@ function StatementBatchSection({ token }: { token: string }) {
     <div>
       <h3 className="section-title" style={{ marginTop: 0 }}>PDF statement import</h3>
       <p style={{ color: "#666", marginTop: 0 }}>
-        Upload one or many statements (any property-manager format, mixed months and properties).
-        They're parsed on your machine (free). New properties/categories are held for your
-        approval — approve to use one everywhere, reject to skip it everywhere — then upload all.
+        Upload one or many statements (any property-manager format, mixed months and properties),
+        including a portfolio rent roll that lists every property on one page — that arrives as
+        one reviewable statement per property. They're parsed on your machine (free). New
+        properties/categories are held for your approval — approve to use one everywhere, reject
+        to skip it everywhere — then upload all.
       </p>
       <div style={card}>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -536,6 +566,13 @@ function StatementBatchSection({ token }: { token: string }) {
               </span>
             )}
             <span style={{ flex: 1 }} />
+            {allocated.length > 0 && (
+              <button style={btn} onClick={() => setAllocatedIncluded(!allocatedOn)}>
+                {allocatedOn
+                  ? `Leave out ${allocated.length} allocated charge row(s)`
+                  : `Include ${allocated.length} allocated charge row(s)`}
+              </button>
+            )}
             <label>
               On bad rows:{" "}
               <select style={input} value={onError} onChange={(e) => setOnError(e.target.value as "abort" | "skip")}>
@@ -547,6 +584,28 @@ function StatementBatchSection({ token }: { token: string }) {
               {busy ? "Uploading…" : `Approve & upload ${readyCount} ready`}
             </button>
           </div>
+
+          {/* Per-FILE review. A rent roll's important facts belong to the file, not to any one
+              property: whether the rents read add back to the total the statement states,
+              which portfolio charges were split across the properties, and which figures on
+              the page named nobody and were therefore left out. */}
+          {files
+            .filter((f) => f.format === "rent_roll" || f.warnings.length > 0)
+            .map((f) => (
+              <div key={f.filename} style={{ ...card, background: "var(--surface-2, #fafafa)" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <strong>{f.filename}</strong>
+                  {f.format === "rent_roll"
+                    ? chip("#eef2ff", "#3730a3", `rent roll · ${f.statements} properties`)
+                    : chip("#eef2ff", "#3730a3", "statement")}
+                </div>
+                {f.warnings.map((w, i) => (
+                  <p key={i} className="muted" style={{ marginTop: 6, marginBottom: 0 }}>
+                    · {w}
+                  </p>
+                ))}
+              </div>
+            ))}
 
           {/* Attention panel: approve/reject the new items (applies across every statement) */}
           {(unknownProps.length > 0 || unknownCats.length > 0) && (
@@ -718,7 +777,13 @@ function StatementBatchSection({ token }: { token: string }) {
                                 value={r.category}
                                 onChange={(e) => setRow(s.id, r.key, { category: e.target.value })}
                               />{" "}
+                              {r.kind === "allocated" && chip("#eef2ff", "#3730a3", "allocated")}{" "}
                               {r.include && catChip(r.category)}
+                              {r.note && (
+                                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                                  {r.note}
+                                </div>
+                              )}
                             </td>
                             <td style={{ textAlign: "left" }}>
                               <select

@@ -5,6 +5,11 @@ property-tier record where shared items (capex, debt service) live. ``POST /reco
 an idempotent upsert that replaces the record's line items wholesale, so re-saving a
 month cleanly overwrites it rather than duplicating. Every write is blocked when the
 property-month is locked (see :mod:`app.locks`).
+
+A line item may be stated as a RATE instead of a figure — "management: 8% of rent"
+(``rate_pct``, migration 0023). The server derives its ``amount`` from the rent in that
+property-month and keeps it there: see :mod:`app.percent_lines`, and ``GET /rent-basis``
+below for the basis the entry form previews against.
 """
 
 from datetime import date
@@ -15,8 +20,9 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import Scope, get_scope
-from app.locks import assert_unlocked
-from app.models import Category, LineItem, MonthlyRecord, PeriodStatus, Unit
+from app.locks import assert_unlocked, ensure_draft_period
+from app.models import Category, LineItem, MonthlyRecord, Unit
+from app.percent_lines import rent_basis
 from app.scoping import get_property_or_404, get_record_or_404
 from app.summaries import refresh_month
 from app.schemas import (
@@ -26,6 +32,7 @@ from app.schemas import (
     MonthlyRecordCreate,
     MonthlyRecordOut,
     MonthlyRecordUpdate,
+    RentBasisOut,
 )
 
 router = APIRouter(tags=["records"])
@@ -40,6 +47,7 @@ def _li_out(li: LineItem) -> LineItemOut:
         category_name=li.category.name if li.category else None,
         classification=li.classification,
         amount=float(li.amount),
+        rate_pct=float(li.rate_pct) if li.rate_pct is not None else None,
     )
 
 
@@ -74,21 +82,6 @@ def _validate_scope(db: Session, scope: Scope, property_id: str, unit_id: str | 
             )
 
 
-def _ensure_draft_period(db: Session, property_id: str, month: date) -> None:
-    """A brand-new record should start life as ``draft`` rather than with no period-status
-    row at all — otherwise ``GET /periods?property_id=&month=`` returns ``[]`` right after a
-    ``POST /records`` and the Entry screen's status badge has nothing to show (analyst gap).
-    Only inserts when no row exists yet; never downgrades an existing posted/locked status.
-    """
-    exists = db.scalar(
-        select(PeriodStatus.id).where(
-            PeriodStatus.property_id == property_id, PeriodStatus.month == month
-        )
-    )
-    if exists is None:
-        db.add(PeriodStatus(property_id=property_id, month=month, status="draft"))
-
-
 def _validate_categories(db: Session, scope: Scope, items: list[LineItemCreate]) -> None:
     ids = [i.category_id for i in items]
     if len(set(ids)) != len(ids):
@@ -114,7 +107,85 @@ def _validate_categories(db: Session, scope: Scope, items: list[LineItemCreate])
             )
 
 
+def _validate_rates(db: Session, scope: Scope, items: list[LineItemCreate]) -> None:
+    """Reject the two ways a rate-stated line could be incoherent.
+
+    1. **A rate AND an amount.** The server derives the amount from rent and rewrites it on
+       every write to the month, so a submitted amount is a second opinion about the same
+       money that would be overwritten moments later. Refusing is honest; silently ignoring
+       the figure the operator typed is not. A zero alongside a rate is fine — that is the
+       field's default, not a figure anyone stated.
+    2. **A rate on a line that counts as rent.** Its own amount would then be part of the
+       basis it is a percentage of. :mod:`app.percent_lines` excludes rate lines from the
+       basis so the arithmetic can never actually run away, but the request still expresses
+       something meaningless — a fee on itself — and is far more likely a mis-picked category.
+    """
+    rated = [i for i in items if i.rate_pct is not None]
+    if not rated:
+        return
+
+    with_amount = [i for i in rated if i.amount]
+    if with_amount:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "A line item is stated either as an amount or as a rate (rate_pct), not "
+                "both — the amount of a rate-stated line is derived from rent."
+            ),
+        )
+
+    defaults = dict(
+        db.execute(
+            select(Category.id, Category.default_classification).where(
+                Category.id.in_([i.category_id for i in rated]),
+                Category.account_id == scope.account_id,
+            )
+        ).all()
+    )
+    for item in rated:
+        effective = item.classification or defaults.get(item.category_id)
+        if effective == "rent":
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "A rate (rate_pct) cannot be used on a line that classifies as rent — "
+                    "it would be a percentage of itself."
+                ),
+            )
+
+
 # ---------------------------------------------------------------- record endpoints
+@router.get("/rent-basis", response_model=RentBasisOut)
+def get_rent_basis(
+    property_id: str = Query(..., description="Property whose rent forms the basis."),
+    month: date = Query(..., description="Month (any day; snapped to the first)."),
+    unit_id: str | None = Query(
+        None,
+        description=(
+            "Omit for the property-tier basis (the property's WHOLE rent for the month, "
+            "every unit included). Give a unit to get that unit's own rent."
+        ),
+    ),
+    db: Session = Depends(get_db),
+    scope: Scope = Depends(get_scope),
+):
+    """The rent a percentage line is charged on, so a form can preview "8% of X = Y".
+
+    Read-only and derived from the same query the save path uses, so the previewed figure is
+    the figure that will be stored — including rent on units the operator is not currently
+    looking at, which is the part they cannot work out by hand.
+    """
+    first = _first_of_month(month)
+    _validate_scope(db, scope, property_id, unit_id)
+    basis = rent_basis(db, property_id, first)
+    return RentBasisOut(
+        property_id=property_id,
+        unit_id=unit_id,
+        month=first,
+        rent=float(basis.get(unit_id, 0)),
+    )
+
+
 @router.get("/records", response_model=list[MonthlyRecordOut])
 def list_records(
     property_id: str | None = None,
@@ -156,8 +227,9 @@ def upsert_record(
     month = _first_of_month(payload.month)
     _validate_scope(db, scope, payload.property_id, payload.unit_id)
     _validate_categories(db, scope, payload.line_items)
+    _validate_rates(db, scope, payload.line_items)
     assert_unlocked(db, payload.property_id, month)
-    _ensure_draft_period(db, payload.property_id, month)
+    ensure_draft_period(db, payload.property_id, month)
 
     rec = db.scalar(
         select(MonthlyRecord).where(
@@ -188,7 +260,10 @@ def upsert_record(
                 account_id=scope.account_id,
                 category_id=item.category_id,
                 classification=item.classification,
-                amount=item.amount,
+                # A rate-stated line starts at 0 and is filled in by the percentage pass
+                # inside refresh_month below, off this month's rent.
+                amount=0 if item.rate_pct is not None else item.amount,
+                rate_pct=item.rate_pct,
             )
         )
     db.flush()  # write line items so the rollup refresh (below) reads the new values
@@ -248,6 +323,7 @@ def add_line_item(
     rec = get_record_or_404(db, scope, record_id)
     assert_unlocked(db, rec.property_id, rec.month)
     _validate_categories(db, scope, [payload])
+    _validate_rates(db, scope, [payload])
 
     li = db.scalar(
         select(LineItem).where(
@@ -264,7 +340,9 @@ def add_line_item(
         )
         db.add(li)
     li.classification = payload.classification
-    li.amount = payload.amount
+    li.rate_pct = payload.rate_pct
+    # A rate-stated line's amount is derived below, inside refresh_month.
+    li.amount = 0 if payload.rate_pct is not None else payload.amount
     db.flush()
     refresh_month(db, rec.property_id, rec.month)
     db.commit()
@@ -289,10 +367,40 @@ def update_line_item(
     rec = li.monthly_record
     assert_unlocked(db, rec.property_id, rec.month)
     data = payload.model_dump(exclude_unset=True)
+    # A patch names ONE of the two ways of stating the line. Naming both is ambiguous rather
+    # than merely redundant, and the order the fields happened to be applied in would decide
+    # the answer — so refuse, exactly as _validate_rates does on create.
+    rate = data.get("rate_pct")
+    if rate is not None and data.get("amount"):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "A line item is stated either as an amount or as a rate (rate_pct), not "
+                "both — the amount of a rate-stated line is derived from rent."
+            ),
+        )
     if "classification" in data:
         li.classification = data["classification"]
-    if "amount" in data:
+    if "rate_pct" in data:
+        li.rate_pct = rate
+        _validate_rates(
+            db,
+            scope,
+            [
+                LineItemCreate(
+                    category_id=li.category_id,
+                    classification=li.classification,
+                    rate_pct=rate,
+                )
+            ],
+        )
+    if "amount" in data and rate is None:
+        # Typing a figure converts the line back to a fixed amount: leaving the rate in place
+        # would just have refresh_month overwrite what was typed on the next write. Guarded on
+        # `rate is None` so a rate in the same patch is never clobbered by the amount it sends
+        # alongside it (which the check above has already limited to zero).
         li.amount = data["amount"]
+        li.rate_pct = None
     db.flush()
     refresh_month(db, rec.property_id, rec.month)
     db.commit()

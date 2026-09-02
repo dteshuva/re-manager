@@ -346,15 +346,48 @@ def portfolio_dashboard(
     )
 
 
+def current_month() -> date:
+    """The first of the current calendar month — the boundary between actuals and the future."""
+    return date.today().replace(day=1)
+
+
+def latest_actual_month(db: Session, table: str, where: str, params: dict) -> date | None:
+    """The most recent summarized month for a scope that is **not in the future**.
+
+    "Latest month on file" is the anchor for nearly everything the app shows by default: the
+    dashboard's period, a property's headline figures, the attention feed, the rent roll's
+    "actual" column, and the trailing-twelve window behind cap rate / cash-on-cash / DSCR.
+
+    A plain ``max(month)`` was fine while every row came from someone typing up a month that
+    had already happened. It stopped being fine once a recurring cost could be posted ahead
+    (see :mod:`app.routers.shared_expenses`): posting two years of a loan payment creates two
+    years of property-months that hold the expense but not the rent nobody has collected yet.
+    Anchoring on those made the default view land in 2028 and dragged expense-only months into
+    the trailing-twelve window, so cap rate and cash-on-cash reported against costs with no
+    matching income.
+
+    So the rule is: **a month that hasn't happened yet is not an actual.** Scheduling a cost
+    ahead is a feature; letting it masquerade as performance is not. Future months stay in the
+    ledger and are shown in full to anyone who explicitly asks for a range covering them — this
+    only governs what an *unspecified* period defaults to, and what the return metrics measure.
+    """
+    return db.execute(
+        text(f"SELECT max(month) FROM {table} WHERE {where} AND month <= :as_of_month"),
+        {**params, "as_of_month": current_month()},
+    ).scalar()
+
+
 def _resolve_range(
     db: Session, table: str, where: str, params: dict, date_from: date | None, date_to: date | None
 ) -> tuple[date | None, date | None]:
     """Fill in an unspecified range the same way every period-aware endpoint does: an
-    unspecified ``date_to`` defaults to the scope's latest summarized month, and an
-    unspecified ``date_from`` defaults to that same month (a single-month period). Returns
-    ``(None, None)`` when the scope has no summarized data at all."""
+    unspecified ``date_to`` defaults to the scope's latest actual (non-future) summarized
+    month, and an unspecified ``date_from`` defaults to that same month (a single-month
+    period). An explicitly requested range is honoured as given, future months included —
+    see :func:`latest_actual_month`. Returns ``(None, None)`` when the scope has no
+    summarized data at all."""
     if date_to is None:
-        date_to = db.execute(text(f"SELECT max(month) FROM {table} WHERE {where}"), params).scalar()
+        date_to = latest_actual_month(db, table, where, params)
     if date_to is None:
         return None, None
     if date_from is None:
@@ -712,15 +745,45 @@ def portfolio_breakdown(
 def _load_investment_months(
     db: Session, account_id: str, property_id: str, purchase_date: date
 ) -> list[dict]:
-    """Summarized months at/after the purchase month, ascending (noi, cash_flow, debt_service)."""
+    """Months this property has actually TRADED in, at/after the purchase month, ascending
+    (noi, cash_flow, debt_service).
+
+    Two filters, both there for the same reason: every figure downstream is a *measurement of
+    what happened*, and the trailing-twelve window is anchored on the last month in this list.
+
+    ``month <= current_month`` — a cost scheduled into next year (a shared expense posted
+    ahead) would otherwise move the anchor forward and fill the window with months holding
+    expenses and no income, reporting a cap rate against costs whose matching rent hasn't been
+    earned yet. See :func:`latest_actual_month`.
+
+    ``EXISTS a line item that isn't a scheduled posting`` — the same problem one month wide.
+    Posting a recurring cost into the current month creates a property-month containing the
+    mortgage and nothing else, weeks before anyone types the rent. Counting that as a traded
+    month yields a small NEGATIVE cap rate, which reads as a real (bad) result rather than as
+    the absence of one. A month whose only content was put there by a schedule has no
+    performance to measure, so it is left out until something else is recorded in it — at which
+    point it starts counting on its own, with no action needed."""
     first = purchase_date.replace(day=1)
     rows = db.execute(
         text(
-            "SELECT month, noi, cash_flow, debt_service FROM property_month_summary "
-            "WHERE account_id = :account_id AND property_id = :id AND month >= :first "
-            "ORDER BY month"
+            "SELECT s.month, s.noi, s.cash_flow, s.debt_service "
+            "FROM property_month_summary s "
+            "WHERE s.account_id = :account_id AND s.property_id = :id "
+            "  AND s.month >= :first AND s.month <= :as_of_month "
+            "  AND EXISTS ("
+            "      SELECT 1 FROM monthly_records mr "
+            "      JOIN line_items li ON li.monthly_record_id = mr.id "
+            "      WHERE mr.property_id = s.property_id AND mr.month = s.month "
+            "        AND li.shared_expense_id IS NULL"
+            "  ) "
+            "ORDER BY s.month"
         ),
-        {"account_id": account_id, "id": property_id, "first": first},
+        {
+            "account_id": account_id,
+            "id": property_id,
+            "first": first,
+            "as_of_month": current_month(),
+        },
     ).mappings().all()
     return [dict(r) for r in rows]
 
@@ -754,6 +817,10 @@ def _investment_figures(inv: dict, months: list[dict]) -> dict:
         "loan_amount": loan,
         "purchase_date": inv["purchase_date"],
         "equity_invested": equity,
+        # Present when these inputs came from a bulk purchase, i.e. closing costs and loan are
+        # this property's allocated share of a deal-wide total (see app/routers/acquisitions).
+        "acquisition_id": inv.get("acquisition_id"),
+        "acquisition_name": inv.get("acquisition_name"),
         "months_available": len(months),
         "t12_months": 0,
         "t12_noi": None,
@@ -829,6 +896,8 @@ def investment_metrics(db: Session, account_id: str, property_id: str) -> dict |
         "loan_amount": None,
         "purchase_date": None,
         "equity_invested": None,
+        "acquisition_id": None,
+        "acquisition_name": None,
         "months_available": 0,
         "t12_months": 0,
         "t12_noi": None,
@@ -842,8 +911,10 @@ def investment_metrics(db: Session, account_id: str, property_id: str) -> dict |
     }
     inv = db.execute(
         text(
-            "SELECT i.purchase_price, i.closing_costs, i.loan_amount, i.purchase_date "
+            "SELECT i.purchase_price, i.closing_costs, i.loan_amount, i.purchase_date, "
+            "       i.acquisition_id::text AS acquisition_id, a.name AS acquisition_name "
             "FROM property_investment i JOIN properties p ON p.id = i.property_id "
+            "LEFT JOIN portfolio_acquisition a ON a.id = i.acquisition_id "
             "WHERE i.property_id = :id AND p.account_id = :account_id"
         ),
         {"id": property_id, "account_id": account_id},
@@ -867,8 +938,10 @@ def portfolio_investment(db: Session, account_id: str) -> dict:
     rows = db.execute(
         text(
             "SELECT p.id::text AS id, p.name, p.type, i.purchase_price, i.closing_costs, "
-            "       i.loan_amount, i.purchase_date "
+            "       i.loan_amount, i.purchase_date, "
+            "       i.acquisition_id::text AS acquisition_id, a.name AS acquisition_name "
             "FROM property_investment i JOIN properties p ON p.id = i.property_id "
+            "LEFT JOIN portfolio_acquisition a ON a.id = i.acquisition_id "
             "WHERE p.account_id = :account_id "
             "ORDER BY p.name"
         ),
@@ -1066,7 +1139,7 @@ def portfolio_benchmarks(
         for r in _rows(
             db.execute(
                 text(_rent_roll_sql(f"p.account_id = :account_id AND {_tag_where('p.id')}")),
-                {"account_id": account_id, "tags": tags},
+                {"account_id": account_id, "tags": tags, "as_of_month": current_month()},
             )
         )
     ]
@@ -1552,8 +1625,8 @@ def _resolve_rent_variance_period(
     db: Session, unit_scope_where: str, params: dict, date_from: date | None, date_to: date | None
 ) -> tuple[date | None, date | None]:
     """Default the rent-variance window the same way every other period-aware endpoint
-    does (see `_resolve_range`): an unspecified `date_to` is the latest month with ANY
-    actual rent data on file for this scope (property or tag-filtered portfolio), and an
+    does (see `_resolve_range`): an unspecified `date_to` is the latest NON-FUTURE month with
+    ANY actual rent data on file for this scope (property or tag-filtered portfolio), and an
     unspecified `date_from` defaults to that same month (a single-month window). Returns
     `(None, None)` when the scope has no unit-month data at all yet."""
     if date_to is None:
@@ -1563,10 +1636,10 @@ def _resolve_rent_variance_period(
                 SELECT max(ums.month) FROM unit_month_summary ums
                 JOIN units u ON u.id = ums.unit_id
                 JOIN properties p ON p.id = u.property_id
-                WHERE {unit_scope_where}
+                WHERE {unit_scope_where} AND ums.month <= :as_of_month
                 """
             ),
-            params,
+            {**params, "as_of_month": current_month()},
         ).scalar()
     if date_to is None:
         return None, None
@@ -1875,8 +1948,11 @@ def _rent_roll_sql(where: str) -> str:
             -- posted for that month (e.g. a draft period touched but never filled in)
             -- would otherwise anchor "latest month" on a month with zero unit data,
             -- making every unit look like a data gap even when its actual history is fine.
+            -- Clamped to the present for the same reason as `latest_actual_month`: a month
+            -- that hasn't happened yet has no "actual rent" to show against a lease.
             SELECT property_id, max(month) AS month
             FROM unit_month_summary
+            WHERE month <= :as_of_month
             GROUP BY property_id
         )
         SELECT
@@ -1940,7 +2016,7 @@ def property_rent_roll(
     today = date.today()
     scope_where = "u.property_id = :pid AND p.account_id = :account_id"
     params = {"pid": property_id, "account_id": account_id}
-    rows = _rows(db.execute(text(_rent_roll_sql(scope_where)), params))
+    rows = _rows(db.execute(text(_rent_roll_sql(scope_where)), {**params, "as_of_month": current_month()}))
     out_rows = [_rent_roll_row(r, today) for r in rows]
     period_from, period_to, rent_variance = _apply_rent_variance(
         db, account_id, out_rows, scope_where, params, date_from, date_to
@@ -1965,7 +2041,7 @@ def portfolio_rent_roll(
     today = date.today()
     scope_where = f"p.account_id = :account_id AND {_tag_where('p.id')}"
     params = {"account_id": account_id, "tags": tags}
-    rows = _rows(db.execute(text(_rent_roll_sql(scope_where)), params))
+    rows = _rows(db.execute(text(_rent_roll_sql(scope_where)), {**params, "as_of_month": current_month()}))
     out_rows = [_rent_roll_row(r, today) for r in rows]
     period_from, period_to, rent_variance = _apply_rent_variance(
         db, account_id, out_rows, scope_where, params, date_from, date_to

@@ -1,4 +1,5 @@
-waiting for server to start.... done
+pg_ctl: another server might be running; trying to start server anyway
+waiting for server to start..... done
 server started
 Postgres up on localhost:5433, db 're_manager'
 DATABASE_URL=postgresql+psycopg2://postgres@localhost:5433/re_manager

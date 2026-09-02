@@ -10,6 +10,7 @@ import {
   type PropertyBenchmarkRow,
 } from "../api";
 import { toneClass } from "../components/KpiBand";
+import PortfolioAcquisitions from "../components/PortfolioAcquisitions";
 import { fmtCurrency, fmtMonth, fmtPct } from "../ui";
 
 // Portfolio-level investment comparison: every property that has acquisition data, with its
@@ -216,12 +217,27 @@ export default function Investments({
   const [data, setData] = useState<PortfolioInvestment | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadPortfolio = () =>
     getPortfolioInvestment(token).then(setData).catch((e) => setError(e.message));
+
+  useEffect(() => {
+    loadPortfolio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   if (error) return <p className="alert-error">{error}</p>;
   if (!data) return <p className="hint">Loading…</p>;
+
+  // Recording a bulk purchase writes acquisition data onto its members, so the aggregates and
+  // the by-property table above have to be re-read whenever a deal changes.
+  const existingInvestmentIds = new Set(data.properties.map((p) => p.property_id));
+  const acquisitionsSection = (
+    <PortfolioAcquisitions
+      token={token}
+      existingInvestmentIds={existingInvestmentIds}
+      onChanged={loadPortfolio}
+    />
+  );
 
   const nudge = data.missing_property_count > 0 && (
     <p className="hint" style={{ background: "var(--warn-soft)", padding: "10px 14px", borderRadius: "var(--radius-sm)" }}>
@@ -257,8 +273,10 @@ export default function Investments({
         {nudge}
         <p className="hint">
           No properties have acquisition data yet. Open the <strong>Property</strong> tab, pick a property, and add its
-          purchase price, financing and date under “Investment returns.”
+          purchase price, financing and date under “Investment returns.” If you bought several together on one
+          contract, record it as a portfolio purchase below instead.
         </p>
+        {acquisitionsSection}
         <BenchmarksSection token={token} />
       </>
     );
@@ -312,6 +330,7 @@ export default function Investments({
         </table>
       </div>
 
+      {acquisitionsSection}
       <BenchmarksSection token={token} />
     </section>
   );
@@ -320,7 +339,14 @@ export default function Investments({
 function Row({ p }: { p: InvestmentMetrics }) {
   return (
     <tr>
-      <td>{p.property_name}</td>
+      <td>
+        {p.property_name}
+        {p.acquisition_name && (
+          <div className="muted" style={{ fontSize: 11 }} title="Closing costs and loan are this property's allocated share of a bulk purchase.">
+            part of {p.acquisition_name}
+          </div>
+        )}
+      </td>
       <td>{p.purchase_date ? fmtMonth(p.purchase_date) : "—"}</td>
       <td>{fmtCurrency(p.purchase_price ?? 0)}</td>
       <td>{fmtCurrency(p.equity_invested ?? 0)}</td>

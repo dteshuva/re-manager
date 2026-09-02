@@ -20,7 +20,7 @@ const TABS: { id: Tab; label: string; icon: string; title: string; sub: string }
   { id: "investments", label: "Investments", icon: "◈", title: "Investment Insights", sub: "Cap rate, cash-on-cash and DSCR per property." },
   { id: "rentroll", label: "Rent Roll", icon: "⌂", title: "Rent Roll", sub: "Leases, tenants, contract vs. actual rent, and rollover risk." },
   { id: "compliance", label: "Compliance", icon: "✔", title: "Compliance", sub: "Track licensing and safety certificates (EICR, Gas/CP12, EPC…) and their expiry." },
-  { id: "entry", label: "Data Entry", icon: "✎", title: "Data Entry", sub: "Record and post monthly line items." },
+  { id: "entry", label: "Data Entry", icon: "✎", title: "Data Entry", sub: "Record and post monthly line items, and split shared bills across properties." },
   { id: "import", label: "Import", icon: "⤓", title: "Bulk Import", sub: "Load CSV or Excel statements." },
   { id: "manage", label: "Manage", icon: "⚙", title: "Manage", sub: "Properties, units and categories." },
   { id: "reclassify", label: "Reclassify", icon: "⇄", title: "Reclassify", sub: "Re-bucket a category and watch NOI recompute." },

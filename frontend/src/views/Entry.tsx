@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   deleteRecord,
   getMe,
+  getRentBasis,
   listCategories,
   listPeriods,
   listProperties,
@@ -11,19 +12,40 @@ import {
   unlockPeriod,
   upsertRecord,
   type Category,
+  type LineItem,
   type PeriodState,
   type PeriodStatus,
   type Property,
   type Unit,
 } from "../api";
+import { fmtCurrency } from "../ui";
 import PropertySearchSelect from "../components/PropertySearchSelect";
+import SharedExpenses from "../components/SharedExpenses";
 
 // `id` is a stable client-side key (backend line item id when loaded, a fresh uuid for a
 // row added in this session) — never the array index, so deleting/reordering rows can't
 // misattribute focus/state to the wrong DOM node.
-type Row = { id: string; category_id: string; amount: string };
+//
+// `basis` is how the row is STATED: a figure the operator types, or a rate the server turns
+// into a figure ("management: 8% of rent"). `amount` and `rate_pct` are both kept as the
+// user typed them so toggling between the two doesn't discard what's in the other box.
+type Row = { id: string; category_id: string; basis: "amount" | "percent"; amount: string; rate_pct: string };
 
-const newRow = (): Row => ({ id: crypto.randomUUID(), category_id: "", amount: "" });
+const newRow = (): Row => ({
+  id: crypto.randomUUID(),
+  category_id: "",
+  basis: "amount",
+  amount: "",
+  rate_pct: "",
+});
+
+const rowFrom = (li: LineItem): Row => ({
+  id: li.id,
+  category_id: li.category_id,
+  basis: li.rate_pct != null ? "percent" : "amount",
+  amount: String(li.amount),
+  rate_pct: li.rate_pct != null ? String(li.rate_pct) : "",
+});
 
 const thisMonth = () => new Date().toISOString().slice(0, 7); // YYYY-MM
 
@@ -44,6 +66,11 @@ export default function Entry({ token }: { token: string }) {
   const [isVacant, setIsVacant] = useState(false);
   const [recordId, setRecordId] = useState<string | null>(null);
   const [period, setPeriod] = useState<PeriodStatus | null>(null);
+
+  // Rent this scope's percentage lines are charged on, straight from the server so the
+  // preview matches what will actually be stored — for a property-tier record that is the
+  // whole property's rent, units the operator isn't looking at included. null = not loaded.
+  const [basisRent, setBasisRent] = useState<number | null>(null);
 
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,16 +123,16 @@ export default function Entry({ token }: { token: string }) {
         setRecordId(rec?.id ?? null);
         setNotes(rec?.notes ?? "");
         setIsVacant(rec?.is_vacant ?? false);
-        setRows(
-          rec && rec.line_items.length
-            ? rec.line_items.map((li) => ({ id: li.id, category_id: li.category_id, amount: String(li.amount) }))
-            : [newRow()],
-        );
+        setRows(rec && rec.line_items.length ? rec.line_items.map(rowFrom) : [newRow()]);
       })
       .catch((e) => !cancelled && setError(e.message));
     listPeriods(token, { property_id: propertyId, month })
       .then((ps) => !cancelled && setPeriod(ps[0] ?? null))
       .catch((e) => !cancelled && setError(e.message));
+    setBasisRent(null);
+    getRentBasis(token, { property_id: propertyId, month, unit_id: scope || null })
+      .then((b) => !cancelled && setBasisRent(b.rent))
+      .catch(() => !cancelled && setBasisRent(null));
     return () => {
       cancelled = true;
     };
@@ -121,9 +148,15 @@ export default function Entry({ token }: { token: string }) {
   async function save() {
     setMsg(null);
     setError(null);
+    // A rate-stated row sends the rate and no amount — the server derives the figure from
+    // rent, and sending both is rejected precisely because they could disagree.
     const line_items = rows
-      .filter((r) => r.category_id && r.amount !== "")
-      .map((r) => ({ category_id: r.category_id, amount: Number(r.amount) }));
+      .filter((r) => r.category_id && (r.basis === "percent" ? r.rate_pct !== "" : r.amount !== ""))
+      .map((r) =>
+        r.basis === "percent"
+          ? { category_id: r.category_id, amount: 0, rate_pct: Number(r.rate_pct) }
+          : { category_id: r.category_id, amount: Number(r.amount) },
+      );
     const dupes = line_items.length !== new Set(line_items.map((l) => l.category_id)).size;
     if (dupes) {
       setError("Each category can appear only once per record.");
@@ -139,6 +172,12 @@ export default function Entry({ token }: { token: string }) {
         line_items,
       });
       setRecordId(rec.id);
+      // Re-seed from the response: percentage rows come back with the amount the server
+      // derived, and saved rent may have moved the basis every percentage row previews against.
+      setRows(rec.line_items.length ? rec.line_items.map(rowFrom) : [newRow()]);
+      getRentBasis(token, { property_id: propertyId, month, unit_id: scope || null })
+        .then((b) => setBasisRent(b.rent))
+        .catch(() => setBasisRent(null));
       setMsg(`Saved ${line_items.length} line item(s).`);
     } catch (e) {
       setError((e as Error).message);
@@ -230,7 +269,7 @@ export default function Entry({ token }: { token: string }) {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th style={{ width: "58%", textAlign: "left", padding: "11px 14px", fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--ink-3)", background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}>Category</th>
+                  <th style={{ width: "44%", textAlign: "left", padding: "11px 14px", fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--ink-3)", background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}>Category</th>
                   <th style={{ textAlign: "left", padding: "11px 14px", fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--ink-3)", background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}>Amount</th>
                   <th style={{ background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}></th>
                 </tr>
@@ -259,15 +298,54 @@ export default function Entry({ token }: { token: string }) {
                       </select>
                     </td>
                     <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)" }}>
-                      <input
-                        className="input"
-                        style={{ width: 120 }}
-                        type="number"
-                        step="0.01"
-                        value={row.amount}
-                        disabled={locked}
-                        onChange={(e) => setRow(row.id, { amount: e.target.value })}
-                      />
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        {/* Some costs are agreed as a rate, not a figure — a management fee is
+                            "8% of rent", not "$336". Stating the rate lets the server keep the
+                            figure in step with rent instead of the operator retyping it. */}
+                        <select
+                          className="select"
+                          style={{ width: 104 }}
+                          value={row.basis}
+                          disabled={locked}
+                          onChange={(e) => setRow(row.id, { basis: e.target.value as Row["basis"] })}
+                        >
+                          <option value="amount">Amount</option>
+                          <option value="percent">% of rent</option>
+                        </select>
+                        {row.basis === "percent" ? (
+                          <input
+                            className="input"
+                            style={{ width: 84 }}
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            placeholder="8"
+                            value={row.rate_pct}
+                            disabled={locked}
+                            onChange={(e) => setRow(row.id, { rate_pct: e.target.value })}
+                          />
+                        ) : (
+                          <input
+                            className="input"
+                            style={{ width: 120 }}
+                            type="number"
+                            step="0.01"
+                            value={row.amount}
+                            disabled={locked}
+                            onChange={(e) => setRow(row.id, { amount: e.target.value })}
+                          />
+                        )}
+                      </div>
+                      {row.basis === "percent" && (
+                        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                          {basisRent === null
+                            ? "rent basis unavailable"
+                            : row.rate_pct === ""
+                              ? `of ${fmtCurrency(basisRent)} rent`
+                              : `= ${fmtCurrency((Number(row.rate_pct) / 100) * basisRent)} of ${fmtCurrency(basisRent)} rent`}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)" }}>
                       <button className="btn btn-ghost" disabled={locked} onClick={() => removeRow(row.id)}>
@@ -280,10 +358,15 @@ export default function Entry({ token }: { token: string }) {
             </table>
           </div>
 
-          <div style={{ marginTop: 10 }}>
+          <div style={{ marginTop: 10, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
             <button className="btn" disabled={locked} onClick={addRow}>
               + Add line
             </button>
+            <span className="muted" style={{ fontSize: 12 }}>
+              A “% of rent” line (a management fee, typically) is recomputed from{" "}
+              {scope ? "this unit’s rent" : "the property’s whole rent for the month"} whenever that
+              rent changes — so it never goes stale.
+            </span>
           </div>
 
           <div style={{ marginTop: 12 }}>
@@ -341,6 +424,12 @@ export default function Entry({ token }: { token: string }) {
           {error && <p className="alert-error" style={{ marginTop: 12 }}>{error}</p>}
         </>
       )}
+
+      {/* Costs that belong to several properties at once (a portfolio loan payment, a blanket
+          policy) have no single property to be typed against, so they live below the per-property
+          form rather than inside it: define the split once, then post it to a month or a year and
+          each member gets its own share as an ordinary property-tier line item. */}
+      <SharedExpenses token={token} isAdmin={isAdmin} />
     </section>
   );
 }

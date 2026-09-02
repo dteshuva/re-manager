@@ -69,7 +69,8 @@ echo
 fails=0
 for script in verify_phase1.py verify_phase2.py verify_phase3.py verify_phase4.py \
               verify_phase5.py verify_phase6.py verify_phase7.py verify_phase8.py \
-              verify_phase9.py verify_phase10.py verify_isolation.py; do
+              verify_phase9.py verify_phase10.py verify_phase11.py verify_phase12.py \
+              verify_phase13.py verify_phase14.py verify_isolation.py; do
   [ -f "$script" ] || continue
   psql -d postgres -tAc "DROP DATABASE IF EXISTS ${SCRATCH_DB};" >/dev/null 2>&1
   psql -d postgres -tAc "CREATE DATABASE ${SCRATCH_DB} TEMPLATE ${TEMPLATE_DB};" >/dev/null 2>&1

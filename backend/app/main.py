@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.routers import (
+    acquisitions,
     audit,
     auth,
     budgets,
@@ -17,6 +18,7 @@ from app.routers import (
     properties,
     records,
     settings as settings_router,
+    shared_expenses,
     tags,
     units,
 )
@@ -50,6 +52,8 @@ app.include_router(categories.router)
 app.include_router(records.router)
 app.include_router(imports.router)
 app.include_router(investments.router)
+app.include_router(acquisitions.router)
+app.include_router(shared_expenses.router)
 app.include_router(settings_router.router)
 app.include_router(audit.router)
 app.include_router(budgets.router)

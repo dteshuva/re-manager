@@ -182,16 +182,25 @@ class CategoryMergeOut(BaseModel):
 
 
 # ---- Line items (CRUD) ----
+# A line is stated ONE of two ways: as a figure (``amount``) or as a rate (``rate_pct`` —
+# "management: 8% of rent", migration 0023). They are mutually exclusive on input: when
+# ``rate_pct`` is given the server DERIVES the amount from that property-month's rent and
+# rewrites it whenever rent changes, so any amount sent alongside would be a second, instantly
+# stale opinion about the same money. ``amount`` is always populated on output.
 class LineItemCreate(BaseModel):
     category_id: str
     # Optional per-line override of the category's default_classification.
     classification: str | None = Field(default=None, pattern=_CLASS_PATTERN)
     amount: float = 0
+    rate_pct: float | None = Field(default=None, ge=0, le=100)
 
 
 class LineItemUpdate(BaseModel):
     classification: str | None = Field(default=None, pattern=_CLASS_PATTERN)
     amount: float | None = None
+    # Send a rate to convert the line to a percentage; send an amount to convert it back to a
+    # fixed figure (which clears the rate). Sending both is rejected.
+    rate_pct: float | None = Field(default=None, ge=0, le=100)
 
 
 class LineItemOut(BaseModel):
@@ -201,6 +210,25 @@ class LineItemOut(BaseModel):
     category_name: str | None = None  # convenience for entry UIs
     classification: str | None = None  # the per-line override, if any
     amount: float
+    # NULL ⇒ an ordinary typed figure. Set ⇒ ``amount`` above is this rate applied to the
+    # rent basis for the line's scope, maintained by the server.
+    rate_pct: float | None = None
+
+
+class RentBasisOut(BaseModel):
+    """The rent a percentage line would be charged on, for one scope of a property-month.
+
+    Lets the entry form show "8% of £4,200 = £336" before anything is saved, using the same
+    basis the server will use on save — units the operator is not currently looking at
+    included, which is precisely the arithmetic they cannot do in their head.
+    """
+
+    property_id: str
+    unit_id: str | None = None
+    month: date
+    # Rent in the requested scope: the whole property's rent when unit_id is omitted
+    # (the property-tier basis), else that unit's own rent.
+    rent: float
 
 
 # ---- Monthly records (CRUD) ----
@@ -574,6 +602,12 @@ class StatementRow(BaseModel):
     unknown_category: bool = False
     classification: str | None = Field(default=None, pattern=_CLASS_PATTERN)
     amount: float
+    # "line" = read straight off the statement; "rent" = a property's rent on a rent roll;
+    # "allocated" = this property's computed share of a charge the statement made once over
+    # the whole portfolio. The UI marks allocated rows so a computed figure is never mistaken
+    # for one the agent actually printed against this property.
+    kind: str = "line"
+    note: str | None = None  # what the statement said alongside the figure
 
 
 class StatementPreview(BaseModel):
@@ -581,7 +615,10 @@ class StatementPreview(BaseModel):
     this for review, offers to create any unknown property/categories, then applies the rows
     through the existing ``/import/rows`` seam (idempotent, lock-protected, dry-run-able)."""
 
-    backend: str  # "ollama" | "heuristic"
+    backend: str  # "ollama" | "heuristic" | "rent_roll"
+    # The SHAPE of the file this came from: "single" (one statement, one property) or
+    # "rent_roll" (one page listing many properties, split into one preview each).
+    format: str = "single"
     detected_property: str | None = None
     property_id: str | None = None  # matched existing property, if any
     property_unknown: bool = False
@@ -606,6 +643,25 @@ class StatementBatchItem(BaseModel):
     filename: str
     preview: StatementPreview | None = None
     error: str | None = None
+    # Set when this item is ONE property split out of a multi-property rent roll: the name of
+    # the PDF it came from, so the UI can group the twelve cards one upload produced.
+    source_file: str | None = None
+
+
+class StatementFileNote(BaseModel):
+    """What one uploaded PDF turned out to be, and what the parser wants to say about the
+    file as a whole — as opposed to about one property.
+
+    A rent roll needs this because its important facts are file-level: whether the rents read
+    add back to the total the statement states, which portfolio charges were split across the
+    properties, and which figures on the page named nobody and were therefore left out. Said
+    once per file, those are a review; repeated on twelve property cards they are noise.
+    """
+
+    filename: str
+    format: str  # "single" | "rent_roll"
+    statements: int  # how many property statements this file produced
+    warnings: list[str] = []
 
 
 class StatementBatchPreview(BaseModel):
@@ -614,6 +670,7 @@ class StatementBatchPreview(BaseModel):
     property/category ONCE for the whole batch rather than per statement."""
 
     items: list[StatementBatchItem] = []
+    files: list[StatementFileNote] = []
     unknown_properties: list[str] = []
     unknown_categories: list[UnknownCategory] = []
 
@@ -632,6 +689,10 @@ class PropertyInvestmentOut(PropertyInvestmentIn):
     property_id: str
     equity_invested: float  # purchase_price - loan_amount + closing_costs
     updated_at: datetime
+    # Set when these figures came from a bulk purchase: closing costs and loan are then this
+    # property's allocated share of a deal-wide total, not figures entered for it alone.
+    acquisition_id: str | None = None
+    acquisition_name: str | None = None
 
 
 class InvestmentMetrics(BaseModel):
@@ -655,6 +716,11 @@ class InvestmentMetrics(BaseModel):
     loan_amount: float | None = None
     purchase_date: date | None = None
     equity_invested: float | None = None
+    # Set when the inputs came from a bulk purchase (``portfolio_acquisition``): closing costs
+    # and loan are this property's ALLOCATED share of one deal-wide total. Cap rate is
+    # unaffected (it uses only the agreed price); cash-on-cash and DSCR are share-based.
+    acquisition_id: str | None = None
+    acquisition_name: str | None = None
     # Supporting figures.
     months_available: int = 0          # total summarized months since purchase
     t12_months: int = 0                # months in the trailing-12 window (<12 ⇒ annualized)
@@ -699,6 +765,249 @@ class PortfolioInvestment(BaseModel):
     total_property_count: int = 0
     missing_property_count: int = 0
     missing_properties: list[MissingInvestmentProperty] = []
+
+
+# ---- Portfolio (bulk) acquisitions: one deal, costs allocated across several properties ----
+#
+# A bulk purchase has per-property prices but ONE closing-cost figure and ONE blanket loan.
+# These schemas describe the deal; the resolved split is written onto each member's
+# ``property_investment`` row, so all existing return metrics are unchanged by its existence.
+_ALLOCATION_METHOD_PATTERN = "^(price|equal|custom)$"
+
+
+class AcquisitionMemberIn(BaseModel):
+    """One property in a bulk deal: its own agreed price, plus — for ``custom`` allocation
+    only — the operator's explicit share of the shared costs. Under ``price``/``equal`` the
+    shares are computed and any supplied values are ignored."""
+
+    property_id: str
+    purchase_price: float = Field(ge=0)
+    closing_costs: float | None = Field(default=None, ge=0)
+    loan_amount: float | None = Field(default=None, ge=0)
+
+
+class PortfolioAcquisitionIn(BaseModel):
+    """A bulk purchase to record. ``members`` needs at least two properties — a single-property
+    purchase is an ordinary acquisition and belongs on the property's own investment form.
+
+    Under ``custom`` allocation the stated totals are IGNORED and recomputed as the sum of the
+    per-member shares, so the stored totals can never disagree with the split they describe."""
+
+    name: str = Field(min_length=1, max_length=160)
+    purchase_date: date
+    total_closing_costs: float = Field(default=0, ge=0)
+    total_loan_amount: float = Field(default=0, ge=0)
+    allocation_method: str = Field(default="price", pattern=_ALLOCATION_METHOD_PATTERN)
+    notes: str | None = None
+    members: list[AcquisitionMemberIn] = Field(min_length=2)
+
+
+class AcquisitionMemberOut(BaseModel):
+    """A member with its resolved share. ``price_share`` is the property's fraction of the
+    combined purchase price — the pro-rata weight, surfaced so the split is auditable."""
+
+    property_id: str
+    property_name: str
+    purchase_price: float
+    closing_costs: float
+    loan_amount: float
+    equity_invested: float
+    price_share: float
+
+
+class PortfolioAcquisitionOut(BaseModel):
+    """A recorded bulk purchase with its members' resolved allocations.
+
+    The ``*_drift`` fields compare what is actually stored on the member ``property_investment``
+    rows against this deal's stated totals. They are 0 immediately after saving; a non-zero
+    value means someone has since hand-edited a member on its own property page, so the parts
+    no longer sum to the deal — worth surfacing rather than silently reconciling, because only
+    the operator knows which figure is the right one."""
+
+    id: str
+    name: str
+    purchase_date: date
+    total_closing_costs: float
+    total_loan_amount: float
+    allocation_method: str
+    notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    members: list[AcquisitionMemberOut] = []
+    property_count: int = 0
+    total_purchase_price: float = 0
+    total_equity_invested: float = 0
+    allocated_closing_costs: float = 0
+    allocated_loan_amount: float = 0
+    closing_costs_drift: float = 0
+    loan_amount_drift: float = 0
+
+
+class AcquisitionPreview(BaseModel):
+    """The split a set of inputs WOULD produce, computed without saving anything — so the
+    entry form can show the allocation table live from the same code that will persist it,
+    rather than a client-side reimplementation that could round differently."""
+
+    members: list[AcquisitionMemberOut] = []
+    total_purchase_price: float = 0
+    total_closing_costs: float = 0
+    total_loan_amount: float = 0
+    total_equity_invested: float = 0
+
+
+# ---- Shared expenses (one bill covering several properties, split across them monthly) ----
+_SHARED_METHOD_PATTERN = "^(equal|price|units|custom)$"
+_ON_CONFLICT_PATTERN = "^(fail|replace|skip)$"
+
+
+class SharedExpenseMemberIn(BaseModel):
+    """One property covered by the arrangement. ``custom_share`` is read ONLY under
+    ``custom`` allocation, where the operator states each property's share outright; under
+    ``equal``/``price``/``units`` the shares are computed and any supplied value is ignored."""
+
+    property_id: str
+    custom_share: float | None = Field(default=None, ge=0)
+
+
+class SharedExpenseIn(BaseModel):
+    """A shared-cost arrangement to record. ``members`` needs at least two properties — a cost
+    borne by one property is an ordinary line item and belongs on that property's entry form.
+
+    ``amount`` is the bill for ONE month; posting to a range of months applies it to each.
+    Under ``custom`` allocation the stated ``amount`` is IGNORED and recomputed as the sum of
+    the members' shares, so the stored total can never disagree with the split it describes."""
+
+    name: str = Field(min_length=1, max_length=160)
+    category_id: str
+    classification: str | None = Field(default=None, pattern=_CLASS_PATTERN)
+    amount: float = Field(default=0, ge=0)
+    allocation_method: str = Field(default="equal", pattern=_SHARED_METHOD_PATTERN)
+    notes: str | None = None
+    members: list[SharedExpenseMemberIn] = Field(min_length=2)
+
+
+class SharedExpenseMemberOut(BaseModel):
+    """A member with its resolved monthly share. ``basis`` is the raw weighting figure the
+    method used (purchase price, unit count, or 1 for an equal split) and ``weight_share`` is
+    that figure as a fraction of the total — both surfaced so the split is auditable rather
+    than a number the operator has to take on trust."""
+
+    property_id: str
+    property_name: str
+    amount: float
+    basis: float
+    weight_share: float
+
+
+class SharedExpenseOut(BaseModel):
+    """A recorded arrangement with its members' current monthly shares.
+
+    ``allocated_amount`` is the sum of the shares, which equals ``amount`` by construction —
+    it is returned so a client can assert that rather than assume it. ``posted_months`` lists
+    the months this arrangement has actually written line items into, so the UI can show what
+    is already applied without a second round trip."""
+
+    id: str
+    name: str
+    category_id: str
+    category_name: str | None = None
+    classification: str | None = None
+    amount: float
+    allocation_method: str
+    notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    members: list[SharedExpenseMemberOut] = []
+    property_count: int = 0
+    allocated_amount: float = 0
+    posted_months: list[date] = []
+
+
+class SharedExpenseSplit(BaseModel):
+    """The per-property split a set of inputs WOULD produce, computed without saving.
+
+    Exists so the entry form's live allocation table comes from the same code that will
+    persist it — a client-side reimplementation could distribute the leftover cents
+    differently and show a split the saved arrangement then contradicts."""
+
+    members: list[SharedExpenseMemberOut] = []
+    total_amount: float = 0
+    allocation_method: str = "equal"
+
+
+class SharedExpensePostIn(BaseModel):
+    """Which months to apply an arrangement to. ``to_month`` defaults to ``from_month`` (a
+    single month); both are normalised to the first of the month.
+
+    ``on_conflict`` decides what happens when a member's property-month ALREADY has a line
+    item in this category that this arrangement did not post — a hand-entered figure, an
+    imported one, or another arrangement's:
+      * ``fail``    — refuse the whole post and report every conflict (the default: never
+        destroy a figure someone entered by hand as a side effect of a bulk action).
+      * ``replace`` — overwrite it and take ownership of the line.
+      * ``skip``    — leave that property-month alone and post the rest.
+    Lines this arrangement posted before are always updated in place; they are not conflicts."""
+
+    from_month: date
+    to_month: date | None = None
+    on_conflict: str = Field(default="fail", pattern=_ON_CONFLICT_PATTERN)
+
+
+class SharedExpensePostRow(BaseModel):
+    """One property-month the post would touch, and what stands there now.
+
+    ``existing_source`` is why a figure is already present: ``none`` (nothing there),
+    ``this`` (a previous post of this same arrangement — will be updated in place),
+    ``manual`` (hand-entered or imported), or ``other_shared`` (a different arrangement).
+    Only the last two are conflicts. ``locked`` marks a property-month whose period is
+    locked; those block the post until an admin unlocks them, since bypassing the lock in a
+    bulk action would defeat the point of locking."""
+
+    month: date
+    property_id: str
+    property_name: str
+    amount: float
+    existing_amount: float | None = None
+    existing_source: str = "none"
+    locked: bool = False
+
+
+class SharedExpensePostPlan(BaseModel):
+    """A dry run of a post: exactly what would be written, and what stands in the way.
+
+    ``blocked`` is the honest bottom line — true when the post as requested cannot go through
+    (locked months, or conflicts under ``on_conflict=fail``). The UI shows this before the
+    operator commits, so a bulk write across many properties is never a surprise."""
+
+    months: list[date] = []
+    rows: list[SharedExpensePostRow] = []
+    amount_per_month: float = 0
+    total_amount: float = 0
+    conflict_count: int = 0
+    locked_count: int = 0
+    blocked: bool = False
+
+
+class SharedExpensePostResult(BaseModel):
+    """What a post actually wrote. ``skipped`` counts property-months left alone under
+    ``on_conflict=skip`` — non-zero means the posted total is deliberately less than
+    ``amount x months``, which ``total_posted`` reports truthfully rather than as intended."""
+
+    months: list[date] = []
+    rows: list[SharedExpensePostRow] = []
+    line_items_written: int = 0
+    records_created: int = 0
+    skipped: int = 0
+    total_posted: float = 0
+
+
+class SharedExpenseUnpostResult(BaseModel):
+    """What an un-post removed. Only line items carrying this arrangement's provenance are
+    deleted, so a figure someone later edited by hand into the same slot is never collateral."""
+
+    months: list[date] = []
+    line_items_removed: int = 0
+    total_removed: float = 0
 
 
 # ---- Portfolio benchmarking (cross-property comparison against the portfolio average) ----

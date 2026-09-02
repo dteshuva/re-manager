@@ -4,6 +4,10 @@ Two producers feed the same import core:
   * ``POST /import/rows`` — structured rows as JSON (the automation seam; what a future
     document parser would call).
   * ``POST /import/file`` — CSV/Excel upload + a column mapping, parsed then applied.
+  * ``POST /import/statement/extract[-batch]`` — PDF statements parsed locally into a review
+    preview, which the UI then applies through ``/import/rows``. One PDF can hold one
+    property's statement or a whole portfolio's rent roll; the batch form returns the
+    latter as one statement per property.
 
 Both support ``dry_run`` (validate + report, write nothing) so a user can preview, fix,
 and re-upload. Idempotency and lock protection live in :mod:`app.importer`.
@@ -29,11 +33,12 @@ from app.schemas import (
     MissingScope,
     StatementBatchItem,
     StatementBatchPreview,
+    StatementFileNote,
     StatementPreview,
     StatementRow,
     UnknownCategory,
 )
-from app.statements import extract_statement
+from app.statements import StatementFile, extract_statements
 
 router = APIRouter(prefix="/import", tags=["import"])
 
@@ -103,7 +108,7 @@ async def import_file(
     )
 
 
-def _resolve_preview(ex, prop_by_name: dict, cat_by_name: dict) -> StatementPreview:
+def _resolve_preview(ex, prop_by_name: dict, cat_by_name: dict, fmt: str = "single") -> StatementPreview:
     """Turn a raw extraction into a review preview: match the detected property and each
     category against what exists, flagging the unknowns. Shared by the single + batch
     endpoints so their resolution behaves identically."""
@@ -122,10 +127,13 @@ def _resolve_preview(ex, prop_by_name: dict, cat_by_name: dict) -> StatementPrev
                 unknown_category=cat is None,
                 classification=r.get("classification"),
                 amount=r["amount"],
+                kind=r.get("kind", "line"),
+                note=r.get("note"),
             )
         )
     return StatementPreview(
         backend=ex.backend,
+        format=fmt,
         detected_property=ex.property_name,
         property_id=matched_prop.id if matched_prop else None,
         property_unknown=bool(ex.property_name) and matched_prop is None,
@@ -136,8 +144,10 @@ def _resolve_preview(ex, prop_by_name: dict, cat_by_name: dict) -> StatementPrev
     )
 
 
-def _extract_one(content: bytes, props, cats, settings):
-    return extract_statement(
+def _extract_file(content: bytes, props, cats, settings) -> StatementFile:
+    """Parse one uploaded PDF into the statement(s) it contains — one for an ordinary
+    single-property statement, one per property for a portfolio rent roll."""
+    return extract_statements(
         content,
         known_properties=[p.name for p in props],
         known_categories=[c.name for c in cats],
@@ -174,17 +184,29 @@ async def extract_statement_pdf(
         select(Category).where(Category.account_id == scope.account_id)
     ).all()
     try:
-        ex = _extract_one(content, props, cats, settings)
+        result = _extract_file(content, props, cats, settings)
     except Exception as exc:  # pdfplumber raises varied errors on malformed PDFs
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Could not read this PDF: {exc}"
         )
 
-    return _resolve_preview(
-        ex,
+    preview = _resolve_preview(
+        result.extractions[0],
         {p.name.strip().lower(): p for p in props},
         {c.name.strip().lower(): c for c in cats},
+        result.format,
     )
+    # This endpoint's contract is ONE property, so a multi-property rent roll can only be
+    # answered in part here. Say so rather than let the caller assume the file held one
+    # property; extract-batch returns every one of them.
+    preview.warnings = [*result.warnings, *preview.warnings]
+    if len(result.extractions) > 1:
+        preview.warnings.insert(
+            0,
+            f"This statement covers {len(result.extractions)} properties and only the first "
+            "is shown here — upload it through the batch endpoint to import them all.",
+        )
+    return preview
 
 
 @router.post("/statement/extract-batch", response_model=StatementBatchPreview)
@@ -196,7 +218,13 @@ async def extract_statements_batch(
     """Parse many PDF statements at once (mixed months/properties). Each file is parsed
     independently — a bad PDF becomes a per-file error, never a failed batch — and the
     unknown properties/categories are de-duplicated across the whole batch so the UI can
-    resolve each new item ONCE. Writes nothing."""
+    resolve each new item ONCE. Writes nothing.
+
+    A file that turns out to be a multi-property RENT ROLL (one page, a line per property)
+    contributes one item per property, tagged with the ``source_file`` it was split from, plus
+    one entry in ``files`` carrying the file-level review — whether the rents add back to the
+    stated total, which portfolio charges were split across the properties, and which figures
+    named nobody. The caller needs no new code path: the items are ordinary statements."""
     settings = get_settings()
     if len(files) > settings.statement_max_files:
         raise HTTPException(
@@ -216,6 +244,7 @@ async def extract_statements_batch(
     cat_by_name = {c.name.strip().lower(): c for c in cats}
 
     items: list[StatementBatchItem] = []
+    notes: list[StatementFileNote] = []
     unknown_props: dict[str, str] = {}  # lower -> name
     unknown_cats: dict[str, UnknownCategory] = {}  # lower -> {name, suggested_classification}
 
@@ -229,27 +258,57 @@ async def extract_statements_batch(
             items.append(StatementBatchItem(filename=fname, error="The file is empty."))
             continue
         try:
-            ex = _extract_one(content, props, cats, settings)
-            preview = _resolve_preview(ex, prop_by_name, cat_by_name)
+            result = _extract_file(content, props, cats, settings)
+            previews = [
+                _resolve_preview(ex, prop_by_name, cat_by_name, result.format)
+                for ex in result.extractions
+            ]
         except Exception as exc:
             items.append(StatementBatchItem(filename=fname, error=f"Could not read this PDF: {exc}"))
             continue
 
-        items.append(StatementBatchItem(filename=fname, preview=preview))
-        if preview.property_unknown and preview.detected_property:
-            unknown_props.setdefault(preview.detected_property.strip().lower(), preview.detected_property.strip())
-        for r in preview.rows:
-            if r.unknown_category:
-                key = r.category.strip().lower()
-                existing = unknown_cats.get(key)
-                # Keep the first suggestion, but fill one in if an earlier row had none.
-                if existing is None:
-                    unknown_cats[key] = UnknownCategory(name=r.category.strip(), suggested_classification=r.classification)
-                elif existing.suggested_classification is None and r.classification:
-                    existing.suggested_classification = r.classification
+        notes.append(
+            StatementFileNote(
+                filename=fname,
+                format=result.format,
+                statements=len(previews),
+                warnings=result.warnings,
+            )
+        )
+
+        # A rent roll becomes one ITEM PER PROPERTY. From here on it is indistinguishable
+        # from having uploaded twelve ordinary statements at once, which is exactly the
+        # point: the batch flow already resolves mixed properties, dedupes their new
+        # categories, and applies each through the import core.
+        split = len(previews) > 1
+        for preview in previews:
+            label = (
+                f"{fname} — {preview.detected_property or 'unidentified property'}"
+                if split
+                else fname
+            )
+            items.append(
+                StatementBatchItem(
+                    filename=label,
+                    preview=preview,
+                    source_file=fname if split else None,
+                )
+            )
+            if preview.property_unknown and preview.detected_property:
+                unknown_props.setdefault(preview.detected_property.strip().lower(), preview.detected_property.strip())
+            for r in preview.rows:
+                if r.unknown_category:
+                    key = r.category.strip().lower()
+                    existing = unknown_cats.get(key)
+                    # Keep the first suggestion, but fill one in if an earlier row had none.
+                    if existing is None:
+                        unknown_cats[key] = UnknownCategory(name=r.category.strip(), suggested_classification=r.classification)
+                    elif existing.suggested_classification is None and r.classification:
+                        existing.suggested_classification = r.classification
 
     return StatementBatchPreview(
         items=items,
+        files=notes,
         unknown_properties=list(unknown_props.values()),
         unknown_categories=list(unknown_cats.values()),
     )

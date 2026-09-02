@@ -39,7 +39,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.queries import _tag_where
+from app.queries import _tag_where, latest_actual_month
 
 # Currency symbol used by _money() when building the human-readable feed labels. Set per
 # request (per account) at each public entry point below; defaults to "$" so any call that
@@ -628,10 +628,13 @@ def attention_feed(
     t = thresholds or Thresholds.from_db(db, account_id)
     _set_currency_symbol(db, account_id)
     if date_to is None:
-        date_to = db.execute(
-            text("SELECT max(month) FROM portfolio_month_summary WHERE account_id = :account_id"),
+        # Non-future: a month scheduled ahead (a shared expense posted forward) holds costs
+        # with no matching income, so anchoring the feed there would report every property as
+        # an NOI collapse the moment a recurring cost is scheduled. See `latest_actual_month`.
+        date_to = latest_actual_month(
+            db, "portfolio_month_summary", "account_id = :account_id",
             {"account_id": account_id},
-        ).scalar()
+        )
     if date_to is None:
         return {"period_from": None, "period_to": None, "items": [], "thresholds": vars(t)}
     if date_from is None:
@@ -887,10 +890,13 @@ def worst_units(
     """
     _set_currency_symbol(db, account_id)
     if date_to is None:
-        date_to = db.execute(
-            text("SELECT max(month) FROM portfolio_month_summary WHERE account_id = :account_id"),
+        # Non-future: a month scheduled ahead (a shared expense posted forward) holds costs
+        # with no matching income, so anchoring the feed there would report every property as
+        # an NOI collapse the moment a recurring cost is scheduled. See `latest_actual_month`.
+        date_to = latest_actual_month(
+            db, "portfolio_month_summary", "account_id = :account_id",
             {"account_id": account_id},
-        ).scalar()
+        )
     if date_to is None:
         return {"period_from": None, "period_to": None, "items": []}
     if date_from is None:
@@ -1152,13 +1158,11 @@ def property_attention(
     t = thresholds or Thresholds.from_db(db, account_id)
     _set_currency_symbol(db, account_id)
     if date_to is None:
-        date_to = db.execute(
-            text(
-                "SELECT max(month) FROM property_month_summary "
-                "WHERE property_id = :id AND account_id = :account_id"
-            ),
+        date_to = latest_actual_month(
+            db, "property_month_summary",
+            "property_id = :id AND account_id = :account_id",
             {"id": property_id, "account_id": account_id},
-        ).scalar()
+        )
     if date_to is None:
         return {"period_from": None, "period_to": None, "items": [], "thresholds": vars(t)}
     if date_from is None:

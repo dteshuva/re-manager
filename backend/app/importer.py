@@ -235,6 +235,10 @@ def apply_import(
                 db.add(li)
             li.classification = rr.classification
             li.amount = rr.amount
+            # An imported figure is a stated fact from a statement, so it converts a
+            # rate-stated line (migration 0023) back to a fixed amount. Leaving the rate on
+            # would have refresh_month overwrite the imported figure moments later.
+            li.rate_pct = None
             applied_items += 1
 
     committed = False

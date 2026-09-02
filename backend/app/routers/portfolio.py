@@ -212,18 +212,17 @@ def property_unit_roster(
     """Server-paginated, sortable unit roster for a property-month (never renders thousands).
 
     Each row carries the unit's month metrics, occupied/vacant status, and NOI change vs the
-    prior month. Defaults the month to the property's latest summarized month.
+    prior month. Defaults the month to the property's latest month with actual (non-future) data.
     """
     prop = get_property_or_404(db, scope, property_id)
     if month is None:
-        from sqlalchemy import text as _text  # local: latest summarized month for this property
-        month = db.execute(
-            _text(
-                "SELECT max(month) FROM property_month_summary "
-                "WHERE property_id = :id AND account_id = :account_id"
-            ),
+        # Latest month with actual data, never one scheduled ahead — see
+        # queries.latest_actual_month for why the roster must not default into the future.
+        month = queries.latest_actual_month(
+            db, "property_month_summary",
+            "property_id = :id AND account_id = :account_id",
             {"id": prop.id, "account_id": scope.account_id},
-        ).scalar()
+        )
     if month is None:
         return {"month": None, "prior_month": None, "total": 0, "rows": []}
     return queries.unit_roster(

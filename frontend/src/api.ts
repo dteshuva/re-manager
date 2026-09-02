@@ -611,6 +611,9 @@ export interface LineItem {
   category_name: string | null;
   classification: Classification | null; // per-line override
   amount: number;
+  // Non-null ⇒ the line is stated as a RATE ("management: 8% of rent") and `amount` above is
+  // that rate applied to the month's rent, maintained by the server whenever rent changes.
+  rate_pct: number | null;
 }
 
 export interface MonthlyRecord {
@@ -688,7 +691,23 @@ export interface RecordUpsert {
   month: string;
   notes?: string | null;
   is_vacant?: boolean;
-  line_items: { category_id: string; classification?: Classification | null; amount: number }[];
+  // Send `amount` for a fixed figure, or `rate_pct` for a rate-stated line whose amount the
+  // server derives from rent — never both (the API rejects it).
+  line_items: {
+    category_id: string;
+    classification?: Classification | null;
+    amount: number;
+    rate_pct?: number | null;
+  }[];
+}
+
+// The rent a percentage line is charged on: the whole property's rent for the month when
+// `unit_id` is null (the property-tier basis), else that unit's own rent.
+export interface RentBasis {
+  property_id: string;
+  unit_id: string | null;
+  month: string;
+  rent: number;
 }
 
 export function listRecords(
@@ -701,6 +720,14 @@ export function listRecords(
   if (filters.month) p.set("month", filters.month);
   const q = p.toString();
   return getJson(t, `/records${q ? `?${q}` : ""}`);
+}
+export function getRentBasis(
+  t: string,
+  q: { property_id: string; month: string; unit_id?: string | null },
+): Promise<RentBasis> {
+  const p = new URLSearchParams({ property_id: q.property_id, month: q.month });
+  if (q.unit_id) p.set("unit_id", q.unit_id);
+  return getJson(t, `/rent-basis?${p.toString()}`);
 }
 export const upsertRecord = (t: string, body: RecordUpsert) =>
   request<MonthlyRecord>(t, "POST", "/records", body);
@@ -825,10 +852,17 @@ export interface StatementRow {
   unknown_category: boolean;
   classification: Classification | null;
   amount: number;
+  // "line" = read off the statement; "rent" = a property's rent on a rent roll; "allocated" =
+  // this property's computed share of a charge the statement made once over the whole
+  // portfolio. Allocated rows are marked in the review so a computed figure is never mistaken
+  // for one the agent printed against this property.
+  kind: "line" | "rent" | "allocated";
+  note: string | null;
 }
 
 export interface StatementPreview {
-  backend: string; // "ollama" | "heuristic"
+  backend: string; // "ollama" | "heuristic" | "rent_roll"
+  format: "single" | "rent_roll"; // the shape of the FILE this came from
   detected_property: string | null;
   property_id: string | null;
   property_unknown: boolean;
@@ -862,10 +896,25 @@ export interface StatementBatchItem {
   filename: string;
   preview: StatementPreview | null;
   error: string | null;
+  // Set when this item is ONE property split out of a multi-property rent roll: the PDF it
+  // came from. Twelve items can share one source file.
+  source_file: string | null;
+}
+
+// What one uploaded PDF turned out to be, and what the parser has to say about the FILE —
+// whether the rents add back to the total it states, which portfolio charges were split
+// across the properties, which figures named nobody. Said once per file rather than repeated
+// on every property card it produced.
+export interface StatementFileNote {
+  filename: string;
+  format: "single" | "rent_roll";
+  statements: number;
+  warnings: string[];
 }
 
 export interface StatementBatchPreview {
   items: StatementBatchItem[];
+  files: StatementFileNote[];
   unknown_properties: string[];
   unknown_categories: UnknownCategory[];
 }
@@ -902,6 +951,10 @@ export interface PropertyInvestmentOut extends PropertyInvestmentInput {
   property_id: string;
   equity_invested: number; // purchase_price - loan_amount + closing_costs
   updated_at: string;
+  // Set when these figures came from a bulk purchase: closing costs and loan are then this
+  // property's allocated share of a deal-wide total, not figures entered for it alone.
+  acquisition_id: string | null;
+  acquisition_name: string | null;
 }
 
 // Metrics are null when they can't be computed honestly (see backend gates):
@@ -916,6 +969,10 @@ export interface InvestmentMetrics {
   loan_amount: number | null;
   purchase_date: string | null;
   equity_invested: number | null;
+  // Non-null when the inputs came from a bulk purchase — closing costs and loan are then an
+  // allocated share. Cap rate is unaffected (it uses only the real agreed price).
+  acquisition_id: string | null;
+  acquisition_name: string | null;
   months_available: number;
   t12_months: number;
   t12_noi: number | null;
@@ -958,6 +1015,219 @@ export const deleteInvestment = (t: string, id: string) =>
   request<void>(t, "DELETE", `/properties/${id}/investment`);
 export const getPortfolioInvestment = (t: string) =>
   getJson<PortfolioInvestment>(t, "/investments");
+
+// ---- Portfolio (bulk) acquisitions: one deal, costs allocated across several properties ----
+// A bulk purchase has per-property prices but ONE closing-cost figure and ONE blanket loan.
+// The server spreads those shared costs across the members (pro-rata by price, evenly, or by
+// explicit shares) and writes the split onto each property's own investment row, so every
+// return metric reads the same place it always did. Allocation is done server-side so the
+// preview table and the saved deal can never round the leftover cents differently.
+export type AllocationMethod = "price" | "equal" | "custom";
+
+export interface AcquisitionMemberInput {
+  property_id: string;
+  purchase_price: number;
+  // Only read under "custom" allocation; ignored (and may be omitted) otherwise.
+  closing_costs?: number | null;
+  loan_amount?: number | null;
+}
+
+export interface PortfolioAcquisitionInput {
+  name: string;
+  purchase_date: string; // YYYY-MM-DD — shared by every property in the deal
+  total_closing_costs: number;
+  total_loan_amount: number;
+  allocation_method: AllocationMethod;
+  notes?: string | null;
+  members: AcquisitionMemberInput[]; // at least 2 — one property is an ordinary purchase
+}
+
+export interface AcquisitionMember {
+  property_id: string;
+  property_name: string;
+  purchase_price: number;
+  closing_costs: number; // allocated share
+  loan_amount: number; // allocated share
+  equity_invested: number;
+  price_share: number; // fraction of the combined price (the pro-rata weight)
+}
+
+export interface PortfolioAcquisition {
+  id: string;
+  name: string;
+  purchase_date: string;
+  total_closing_costs: number;
+  total_loan_amount: number;
+  allocation_method: AllocationMethod;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  members: AcquisitionMember[];
+  property_count: number;
+  total_purchase_price: number;
+  total_equity_invested: number;
+  // What is actually stored on the member rows right now, and how far that has drifted from
+  // the deal's stated totals. Non-zero drift means a member was hand-edited on its own
+  // property page, so the parts no longer sum to the deal.
+  allocated_closing_costs: number;
+  allocated_loan_amount: number;
+  closing_costs_drift: number;
+  loan_amount_drift: number;
+}
+
+export interface AcquisitionPreview {
+  members: AcquisitionMember[];
+  total_purchase_price: number;
+  total_closing_costs: number;
+  total_loan_amount: number;
+  total_equity_invested: number;
+}
+
+export const getAcquisitions = (t: string) =>
+  getJson<PortfolioAcquisition[]>(t, "/acquisitions");
+export const previewAcquisition = (t: string, body: PortfolioAcquisitionInput) =>
+  request<AcquisitionPreview>(t, "POST", "/acquisitions/preview", body);
+export const createAcquisition = (t: string, body: PortfolioAcquisitionInput) =>
+  request<PortfolioAcquisition>(t, "POST", "/acquisitions", body);
+export const updateAcquisition = (t: string, id: string, body: PortfolioAcquisitionInput) =>
+  request<PortfolioAcquisition>(t, "PUT", `/acquisitions/${id}`, body);
+// Deleting only UNGROUPS by default: members keep their allocated figures and their metrics.
+// `purge` is the explicit opt-in to also clear their acquisition data.
+export const deleteAcquisition = (t: string, id: string, purge = false) =>
+  request<void>(t, "DELETE", `/acquisitions/${id}${purge ? "?purge=true" : ""}`);
+
+// ---- Shared expenses: one bill covering several properties, split across them monthly ----
+// A blanket-loan payment, a multi-property insurance policy, one management retainer. The
+// arrangement is stored once (category, monthly amount, members, basis) and POSTED to a month
+// or a range, which writes an ordinary property-tier line item onto each member. Nothing else
+// in the app learns a new concept — the P&L, NOI and exports read line_items as they always
+// did. The split is computed server-side so the preview and the saved postings can never
+// round the leftover cents differently.
+export type SharedAllocationMethod = "equal" | "price" | "units" | "custom";
+
+// What to do when a member's property-month already holds a line in this category that this
+// arrangement did not post. "fail" is the default: a bulk write must never silently destroy a
+// hand-entered figure.
+export type SharedOnConflict = "fail" | "replace" | "skip";
+
+// Why a figure is already sitting in the target slot. Only "manual" and "other_shared" are
+// conflicts; "this" is a previous post of the same arrangement and is updated in place.
+export type SharedExistingSource = "none" | "this" | "manual" | "other_shared";
+
+export interface SharedExpenseMemberInput {
+  property_id: string;
+  // Only read under "custom" allocation; ignored (and may be omitted) otherwise.
+  custom_share?: number | null;
+}
+
+export interface SharedExpenseInput {
+  name: string;
+  category_id: string;
+  classification?: string | null; // optional per-line override of the category default
+  amount: number; // the bill for ONE month
+  allocation_method: SharedAllocationMethod;
+  notes?: string | null;
+  members: SharedExpenseMemberInput[]; // at least 2 — one property is an ordinary line item
+}
+
+export interface SharedExpenseMember {
+  property_id: string;
+  property_name: string;
+  amount: number; // this property's monthly share
+  basis: number; // the raw weighting figure used (price, door count, or 1 for equal)
+  weight_share: number; // that figure as a fraction of the total
+}
+
+export interface SharedExpense {
+  id: string;
+  name: string;
+  category_id: string;
+  category_name: string | null;
+  classification: string | null;
+  amount: number;
+  allocation_method: SharedAllocationMethod;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  members: SharedExpenseMember[];
+  property_count: number;
+  allocated_amount: number; // sum of the shares — equals `amount` by construction
+  posted_months: string[]; // months this arrangement has actually written line items into
+}
+
+export interface SharedExpenseSplit {
+  members: SharedExpenseMember[];
+  total_amount: number;
+  allocation_method: SharedAllocationMethod;
+}
+
+export interface SharedExpensePostInput {
+  from_month: string; // YYYY-MM-DD (first of month)
+  to_month?: string | null; // defaults to from_month — a single month
+  on_conflict?: SharedOnConflict;
+}
+
+export interface SharedExpensePostRow {
+  month: string;
+  property_id: string;
+  property_name: string;
+  amount: number;
+  existing_amount: number | null;
+  existing_source: SharedExistingSource;
+  locked: boolean;
+}
+
+export interface SharedExpensePostPlan {
+  months: string[];
+  rows: SharedExpensePostRow[];
+  amount_per_month: number;
+  total_amount: number;
+  conflict_count: number;
+  locked_count: number;
+  blocked: boolean; // the post as requested cannot go through as-is
+}
+
+export interface SharedExpensePostResult {
+  months: string[];
+  rows: SharedExpensePostRow[];
+  line_items_written: number;
+  records_created: number;
+  skipped: number;
+  total_posted: number;
+}
+
+export interface SharedExpenseUnpostResult {
+  months: string[];
+  line_items_removed: number;
+  total_removed: number;
+}
+
+export const getSharedExpenses = (t: string) => getJson<SharedExpense[]>(t, "/shared-expenses");
+export const previewSharedSplit = (t: string, body: SharedExpenseInput) =>
+  request<SharedExpenseSplit>(t, "POST", "/shared-expenses/split", body);
+export const createSharedExpense = (t: string, body: SharedExpenseInput) =>
+  request<SharedExpense>(t, "POST", "/shared-expenses", body);
+export const updateSharedExpense = (t: string, id: string, body: SharedExpenseInput) =>
+  request<SharedExpense>(t, "PUT", `/shared-expenses/${id}`, body);
+// Deleting only DETACHES by default: everything already posted stays in the ledger, since the
+// money was really spent. `purge` is the explicit opt-in to remove those postings too.
+export const deleteSharedExpense = (t: string, id: string, purge = false) =>
+  request<void>(t, "DELETE", `/shared-expenses/${id}${purge ? "?purge=true" : ""}`);
+
+// Dry run: exactly which property-months a post would write, what stands there now, and
+// whether anything blocks it. Same server code path as the real post.
+export const previewSharedPost = (t: string, id: string, body: SharedExpensePostInput) =>
+  request<SharedExpensePostPlan>(t, "POST", `/shared-expenses/${id}/post/preview`, body);
+export const postSharedExpense = (t: string, id: string, body: SharedExpensePostInput) =>
+  request<SharedExpensePostResult>(t, "POST", `/shared-expenses/${id}/post`, body);
+// Removes only the line items this arrangement posted; a hand-entered figure in the same
+// category is left alone.
+export const unpostSharedExpense = (t: string, id: string, from: string, to?: string | null) =>
+  request<SharedExpenseUnpostResult>(
+    t,
+    "DELETE",
+    `/shared-expenses/${id}/post?from_month=${from}${to ? `&to_month=${to}` : ""}`,
+  );
 
 // ---- Portfolio benchmarking: every property vs. the portfolio's simple-mean average on
 // NOI/unit, opex ratio, physical + economic occupancy, cap rate, and cash-on-cash ----

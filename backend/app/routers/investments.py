@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app import queries
 from app.db import get_db
 from app.deps import Scope, get_scope
-from app.models import PropertyInvestment
+from app.models import PortfolioAcquisition, PropertyInvestment
 from app.schemas import (
     InvestmentMetrics,
     PortfolioInvestment,
@@ -50,7 +50,13 @@ def upsert_property_investment(
     db: Session = Depends(get_db),
     scope: Scope = Depends(get_scope),
 ):
-    """Create or replace a property's acquisition inputs."""
+    """Create or replace a property's acquisition inputs.
+
+    A property that belongs to a bulk purchase keeps its ``acquisition_id`` through this —
+    editing here does not silently detach it from the deal. The edit can, however, make the
+    members stop summing to the deal's totals; that shows up as the drift reported on
+    ``GET /acquisitions``, for the operator to reconcile (only they know which figure is right).
+    """
     get_property_or_404(db, scope, property_id)
     inv = db.get(PropertyInvestment, property_id)
     if inv is None:
@@ -61,7 +67,7 @@ def upsert_property_investment(
             setattr(inv, field, value)
     db.commit()
     db.refresh(inv)
-    return _investment_out(inv)
+    return _investment_out(inv, _acquisition_name(db, inv.acquisition_id))
 
 
 @router.delete("/properties/{property_id}/investment", status_code=status.HTTP_204_NO_CONTENT)
@@ -76,7 +82,15 @@ def delete_property_investment(
         db.commit()
 
 
-def _investment_out(inv: PropertyInvestment) -> dict:
+def _acquisition_name(db: Session, acquisition_id: str | None) -> str | None:
+    """The bulk purchase these figures were allocated from, if any."""
+    if acquisition_id is None:
+        return None
+    acq = db.get(PortfolioAcquisition, acquisition_id)
+    return acq.name if acq else None
+
+
+def _investment_out(inv: PropertyInvestment, acquisition_name: str | None = None) -> dict:
     price, closing, loan = float(inv.purchase_price), float(inv.closing_costs), float(inv.loan_amount)
     return {
         "property_id": inv.property_id,
@@ -86,4 +100,6 @@ def _investment_out(inv: PropertyInvestment) -> dict:
         "purchase_date": inv.purchase_date,
         "equity_invested": price - loan + closing,
         "updated_at": inv.updated_at,
+        "acquisition_id": inv.acquisition_id,
+        "acquisition_name": acquisition_name,
     }
