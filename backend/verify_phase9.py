@@ -62,7 +62,18 @@ print(f"   property T12 NOI={pd['current']['noi']:,.0f} ✓")
 
 print("\n2) RELATIVE THRESHOLDS DRIVE THE FEED -------------------------------")
 FEED = "/portfolio/attention?from=2025-06-01&to=2025-06-01"
-base = get(FEED)["items"]
+
+
+def change_items(items: list[dict]) -> list[dict]:
+    """Everything except `arrears` (migration 0025) — the detector this section tunes
+    thresholds on are all CHANGE detectors, whereas an arrears balance is a LEVEL that the
+    seed's delinquent units carry in every month of the window. Its own thresholds
+    (`arrears_min_balance` / `arrears_min_months`) are global config rather than per-account
+    `attention_settings` columns, so none of the PUTs below move it. See verify_phase15.py."""
+    return [i for i in items if i["type"] != "arrears"]
+
+
+base = change_items(get(FEED)["items"])
 assert len(base) == 4, len(base)
 # Cedar's NOI drop is merged into its spike (root-cause linking), so no standalone Cedar NOI.
 assert not any(i["type"] == "noi_drop" and i["property_name"] == "Cedar Commons" for i in base)
@@ -78,7 +89,7 @@ def put(**over):
 # Filter out Cedar's spike (raise its %-floor above 448%) → there's no longer a cause to merge
 # into, so Cedar's NOI drop surfaces on its own. Proves the merge is evidence-based, not cosmetic.
 put(expense_spike_min_pct=500)
-a = get(FEED)["items"]
+a = change_items(get(FEED)["items"])
 assert any(i["type"] == "noi_drop" and i["property_name"] == "Cedar Commons" for i in a)
 assert not any(i["type"] == "expense_spike" for i in a)
 print(f"   suppress Cedar's spike → its NOI drop un-merges and shows standalone ✓")
@@ -88,7 +99,7 @@ print(f"   suppress Cedar's spike → its NOI drop un-merges and shows standalon
 # the alert is size-independent (Maple losing 1 of 45 units = 2.2pp; the same single unit in
 # a 1,000-unit property would be 0.1pp and stay quiet).
 put(vacancy_min_occupancy_drop_pct=3.0)
-v = get(FEED)["items"]
+v = change_items(get(FEED)["items"])
 assert not any(i["type"] == "occupancy_drop" for i in v), v
 # Nothing is silently lost when the property-level alert doesn't clear the floor: the
 # unit-grain vacancy is no longer folded into it and reports on its own instead.
@@ -97,7 +108,7 @@ assert len(vac_items) == 1 and vac_items[0]["unit_number"] == "105", v
 print("   occupancy floor 3.0pp → Maple's 2.2pp drop no longer flags at property grain ✓")
 
 put(vacancy_min_occupancy_drop_pct=2.0)
-v = get(FEED)["items"]
+v = change_items(get(FEED)["items"])
 drop = next(i for i in v if i["type"] == "occupancy_drop")
 assert abs(drop["detail"]["occupancy_pp_drop"] - 2.2) < 0.1, drop["detail"]
 assert drop["detail"]["vacated_units"] == ["105"], drop["detail"]
@@ -106,15 +117,15 @@ print("   restored 2.0pp → flags as one property-level item naming unit 105 �
 
 # A threshold that IS live: raise the unit NOI-drop floor and Oak Ridge's drop clears.
 put(noi_drop_min_pct=90)
-n = get(FEED)["items"]
+n = change_items(get(FEED)["items"])
 assert not any(i["type"] == "noi_drop" and i["property_name"] == "Oak Ridge Residences" for i in n)
 print("   NOI-drop floor 90% → Oak Ridge's -58% no longer flags ✓")
 
 # Restore + confirm the merged answer key.
 put()
-final = get(FEED)["items"]
+final = change_items(get(FEED)["items"])
 assert len(final) == 4
-print(f"   restored defaults → {len(final)} items (answer key)")
+print(f"   restored defaults → {len(final)} change items (answer key)")
 
 print("\n2b) ROOT-CAUSE LINKING — magnitude reconciliation --------------------")
 from datetime import date

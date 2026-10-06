@@ -27,7 +27,8 @@ import {
 import { toneClass } from "../components/KpiBand";
 import PropertySearchSelect from "../components/PropertySearchSelect";
 import { clickableProps } from "../hooks/clickable";
-import { fmtCurrency, fmtDate, fmtMonth, fmtMonthsToExpiry, fmtPct, leaseStatusPillClass } from "../ui";
+import { hasConcessions, t } from "../terms";
+import { currencySymbol, fmtCurrency, fmtDate, fmtMonth, fmtMonthsToExpiry, fmtPct, isUK, leaseStatusPillClass } from "../ui";
 
 type SortKey =
   | "property_name"
@@ -36,6 +37,7 @@ type SortKey =
   | "contract_rent"
   | "actual_rent"
   | "variance"
+  | "arrears_balance"
   | "lease_end"
   | "months_to_expiry"
   | "status";
@@ -47,6 +49,7 @@ const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "contract_rent", label: "Contract rent" },
   { key: "actual_rent", label: "Actual rent" },
   { key: "variance", label: "Rent variance" },
+  { key: "arrears_balance", label: "Arrears" },
   { key: "lease_end", label: "Lease end" },
   { key: "months_to_expiry", label: "Months to expiry" },
   { key: "status", label: "Status" },
@@ -81,7 +84,7 @@ const EXPIRY_HORIZONS = [
 ];
 
 const emptyLeaseForm = (): LeaseInput => ({
-  tenant_name: "",
+  tenant_name: null,
   start_date: new Date().toISOString().slice(0, 10),
   end_date: null,
   contract_rent: 0,
@@ -92,6 +95,10 @@ const emptyLeaseForm = (): LeaseInput => ({
   pct_rent_rate: null,
   pct_rent_breakpoint: null,
   concession_monthly: null,
+  last_rent_increase_date: null,
+  rent_before_increase: null,
+  opening_arrears: null,
+  arrears_from_month: null,
 });
 
 // Rent roll: lease + actual-rent + rollover-risk view per unit, filterable by property and
@@ -191,6 +198,20 @@ export default function RentRoll({ token }: { token: string }) {
     return [...byId.values()].sort((a, b) => a.property_name.localeCompare(b.property_name));
   }, [sortedRows]);
 
+  // Property groups start COLLAPSED (owner's preference), except when there's only one group
+  // to show — then the drill-down has nothing to hide and would just cost a click.
+  //
+  // The reason a collapsed roll used to be unusable is fixed separately and still holds: the
+  // per-unit "Add lease"/"Edit" controls were reachable only inside an expanded group, so a
+  // 15-property roll hid every one of them. "Expand all properties" below, plus the "+ Add
+  // lease" control that now sits in the always-visible Tenant column, mean collapsing no longer
+  // puts anything out of reach.
+  const autoExpand = useMemo(() => propertyGroups.length === 1, [propertyGroups]);
+  const allOpen = propertyGroups.every((g) => (openProperties[g.property_id] ?? autoExpand));
+
+  const setAllOpen = (open: boolean) =>
+    setOpenProperties(Object.fromEntries(propertyGroups.map((g) => [g.property_id, open])));
+
   // The expirations feed is portfolio-wide; when a specific property is selected, narrow it
   // client-side rather than adding a property-scoped endpoint just for this section.
   const expirationItems = useMemo(() => {
@@ -205,7 +226,7 @@ export default function RentRoll({ token }: { token: string }) {
     setEditingUnitId(row.unit_id);
     setStatusMsg(null);
     setForm({
-      tenant_name: row.tenant_name ?? "",
+      tenant_name: row.tenant_name,
       start_date: row.lease_start ?? new Date().toISOString().slice(0, 10),
       end_date: row.lease_end,
       contract_rent: row.contract_rent ?? 0,
@@ -216,15 +237,21 @@ export default function RentRoll({ token }: { token: string }) {
       pct_rent_rate: row.pct_rent_rate,
       pct_rent_breakpoint: row.pct_rent_breakpoint,
       concession_monthly: row.concession_monthly,
+      // Migration 0024/0025 fields. Carried through the same way concession_monthly is:
+      // `updateLease` is a full-replace PATCH, so omitting one here would silently wipe a
+      // recorded rent increase or opening balance on any unrelated edit.
+      last_rent_increase_date: row.last_rent_increase_date,
+      rent_before_increase: row.rent_before_increase,
+      opening_arrears: row.opening_arrears,
+      arrears_from_month: row.arrears_from_month,
     });
   };
 
   const saveLease = (row: RentRollRow) => {
     setError(null);
-    if (!form.tenant_name.trim()) {
-      setError("Tenant name is required.");
-      return;
-    }
+    // No tenant-name guard: the name is optional (migration 0026). A tenancy onboarded from
+    // agent statements often has only dates and a rent, and demanding a name just produces a
+    // column of placeholders that can never be told apart from the real thing.
     const body: LeaseInput = { ...form, end_date: form.end_date || null };
     const req = row.lease_id
       ? updateLease(token, row.lease_id, body)
@@ -353,17 +380,20 @@ export default function RentRoll({ token }: { token: string }) {
               </div>
             </div>
             <div className="kpi-card">
-              <div className="kpi-card__label">Avg. vacancy downtime</div>
+              <div className="kpi-card__label">{isUK() ? "Avg. void period" : "Avg. vacancy downtime"}</div>
               <div className="kpi-card__value">
                 {occ.avg_vacant_days == null ? "—" : `${Math.round(occ.avg_vacant_days)}d`}
               </div>
-              <div className="kpi-card__delta is-flat">days since prior lease ended, vacant units</div>
+              <div className="kpi-card__delta is-flat">
+                {`days since prior ${t("lease")} ended, ${t("vacant")} units`}
+              </div>
             </div>
           </div>
           <p className="hint" style={{ marginBottom: 20 }}>
-            Occupancy is lease-based (point-in-time, as of {data?.as_of ? fmtDate(data.as_of) : "today"}) — a
-            different signal from the record/actuals-based "vacancy"/"missing data" items on the attention
-            feed, which reflect posted monthly records rather than current lease state.
+            Occupancy is {t("lease")}-based (point-in-time, as of{" "}
+            {data?.as_of ? fmtDate(data.as_of) : "today"}) — a different signal from the record/actuals-based
+            “{t("vacancy")}”/“missing data” items on the attention feed, which reflect posted monthly records
+            rather than current {t("lease")} state.
           </p>
         </>
       )}
@@ -438,15 +468,31 @@ export default function RentRoll({ token }: { token: string }) {
         const steps: { label: string; value: number; kind: "base" | "loss"; pct: number | null }[] = [
           { label: "Gross potential rent", value: wf.gpr, kind: "base", pct: wf.gpr > 0 ? 1 : null },
           { label: "Loss to lease", value: wf.loss_to_lease, kind: "loss", pct: wf.loss_to_lease_pct_of_gpr },
-          { label: "Vacancy loss", value: wf.vacancy_loss, kind: "loss", pct: wf.vacancy_loss_pct_of_gpr },
           {
-            label: "Concessions (free/discounted rent)", value: wf.concessions, kind: "loss",
-            pct: wf.concessions_pct_of_gpr,
+            label: `${t("Vacancy")} loss`, value: wf.vacancy_loss, kind: "loss",
+            pct: wf.vacancy_loss_pct_of_gpr,
           },
-          {
-            label: "Bad debt (delinquency)", value: wf.bad_debt, kind: "loss",
-            pct: wf.bad_debt_pct_of_gpr,
-          },
+          // A standing rent concession isn't a UK letting concept, so for a £ account the split
+          // collapses and the whole collections shortfall reads as arrears — which is what it is
+          // here. `concessions + bad_debt === collections_loss` by construction, so the bridge
+          // still balances to the penny either way.
+          ...(hasConcessions()
+            ? [
+                {
+                  label: "Concessions (free/discounted rent)", value: wf.concessions,
+                  kind: "loss" as const, pct: wf.concessions_pct_of_gpr,
+                },
+                {
+                  label: "Bad debt (delinquency)", value: wf.bad_debt,
+                  kind: "loss" as const, pct: wf.bad_debt_pct_of_gpr,
+                },
+              ]
+            : [
+                {
+                  label: "Arrears (rent owed, not collected)", value: wf.collections_loss,
+                  kind: "loss" as const, pct: wf.collections_loss_pct_of_gpr,
+                },
+              ]),
           {
             label: "Actual collected rent", value: wf.actual_collected, kind: "base",
             pct: wf.actual_collected_pct_of_gpr,
@@ -561,9 +607,15 @@ export default function RentRoll({ token }: { token: string }) {
                         <th scope="col" style={{ textAlign: "left" }}>Property</th>
                         <th scope="col">GPR</th>
                         <th scope="col">Loss to lease</th>
-                        <th scope="col">Vacancy loss</th>
-                        <th scope="col">Concessions</th>
-                        <th scope="col">Bad debt</th>
+                        <th scope="col">{`${t("Vacancy")} loss`}</th>
+                        {hasConcessions() ? (
+                          <>
+                            <th scope="col">Concessions</th>
+                            <th scope="col">Bad debt</th>
+                          </>
+                        ) : (
+                          <th scope="col">Arrears</th>
+                        )}
                         <th scope="col">Actual collected</th>
                       </tr>
                     </thead>
@@ -576,10 +628,18 @@ export default function RentRoll({ token }: { token: string }) {
                             {fmtCurrency(p.loss_to_lease)}
                           </td>
                           <td className={p.vacancy_loss > 0 ? "value-negative" : undefined}>{fmtCurrency(p.vacancy_loss)}</td>
-                          <td className={p.concessions > 0 ? "value-negative" : undefined}>{fmtCurrency(p.concessions)}</td>
-                          <td className={p.bad_debt > 0 ? "value-negative" : p.bad_debt < 0 ? "value-positive" : undefined}>
-                            {fmtCurrency(p.bad_debt)}
-                          </td>
+                          {hasConcessions() ? (
+                            <>
+                              <td className={p.concessions > 0 ? "value-negative" : undefined}>{fmtCurrency(p.concessions)}</td>
+                              <td className={p.bad_debt > 0 ? "value-negative" : p.bad_debt < 0 ? "value-positive" : undefined}>
+                                {fmtCurrency(p.bad_debt)}
+                              </td>
+                            </>
+                          ) : (
+                            <td className={p.collections_loss > 0 ? "value-negative" : p.collections_loss < 0 ? "value-positive" : undefined}>
+                              {fmtCurrency(p.collections_loss)}
+                            </td>
+                          )}
                           <td style={{ fontWeight: 600 }}>{fmtCurrency(p.actual_collected)}</td>
                         </tr>
                       ))}
@@ -615,9 +675,15 @@ export default function RentRoll({ token }: { token: string }) {
                           <th scope="col" style={{ textAlign: "left" }}>Unit</th>
                           <th scope="col">GPR</th>
                           <th scope="col">Loss to lease</th>
-                          <th scope="col">Vacancy loss</th>
-                          <th scope="col">Concessions</th>
-                          <th scope="col">Bad debt</th>
+                          <th scope="col">{`${t("Vacancy")} loss`}</th>
+                          {hasConcessions() ? (
+                            <>
+                              <th scope="col">Concessions</th>
+                              <th scope="col">Bad debt</th>
+                            </>
+                          ) : (
+                            <th scope="col">Arrears</th>
+                          )}
                           <th scope="col">Actual collected</th>
                         </tr>
                       </thead>
@@ -635,12 +701,20 @@ export default function RentRoll({ token }: { token: string }) {
                             <td className={u.vacancy_loss > 0 ? "value-negative" : undefined}>
                               {fmtCurrency(u.vacancy_loss)}
                             </td>
-                            <td className={u.concessions > 0 ? "value-negative" : undefined}>
-                              {fmtCurrency(u.concessions)}
-                            </td>
-                            <td className={u.bad_debt > 0 ? "value-negative" : u.bad_debt < 0 ? "value-positive" : undefined}>
-                              {fmtCurrency(u.bad_debt)}
-                            </td>
+                            {hasConcessions() ? (
+                              <>
+                                <td className={u.concessions > 0 ? "value-negative" : undefined}>
+                                  {fmtCurrency(u.concessions)}
+                                </td>
+                                <td className={u.bad_debt > 0 ? "value-negative" : u.bad_debt < 0 ? "value-positive" : undefined}>
+                                  {fmtCurrency(u.bad_debt)}
+                                </td>
+                              </>
+                            ) : (
+                              <td className={u.collections_loss > 0 ? "value-negative" : u.collections_loss < 0 ? "value-positive" : undefined}>
+                                {fmtCurrency(u.collections_loss)}
+                              </td>
+                            )}
                             <td style={{ fontWeight: 600 }}>{fmtCurrency(u.actual_collected)}</td>
                           </tr>
                         ))}
@@ -654,7 +728,7 @@ export default function RentRoll({ token }: { token: string }) {
         );
       })()}
 
-      <h3 className="section-title">Leases expiring soon</h3>
+      <h3 className="section-title">{`${t("Leases")} ending soon`}</h3>
       <div className="stack" style={{ maxWidth: 220, marginBottom: 10 }}>
         <label htmlFor="rentroll-horizon">Rollover horizon</label>
         <select
@@ -671,12 +745,16 @@ export default function RentRoll({ token }: { token: string }) {
         </select>
       </div>
       <p className="hint">
-        Active/notice leases whose term ends within the selected horizon, soonest first. Month-to-month
-        units (no fixed end date) never appear here.
+        {`Active/notice ${t("leases")} whose fixed term ends within the selected horizon, soonest first. `}
+        {isUK()
+          ? "Periodic (rolling) tenancies have no end date, so they never appear here — for those, the " +
+            "rent-review signal is “months since last increase” on the rent roll below."
+          : "Month-to-month units (no fixed end date) never appear here."}
       </p>
       {expirations && (
         <p className="hint" style={{ fontWeight: 550 }}>
-          {expirationItems.length} lease{expirationItems.length === 1 ? "" : "s"} totaling{" "}
+          {expirationItems.length} {expirationItems.length === 1 ? t("lease") : t("leases")}{" "}
+          {isUK() ? "totalling" : "totaling"}{" "}
           {fmtCurrency(
             propertyId
               ? expirationItems.reduce((sum, i) => sum + i.contract_rent, 0)
@@ -711,7 +789,7 @@ export default function RentRoll({ token }: { token: string }) {
                 <tr key={i.unit_id}>
                   <td>{i.property_name}</td>
                   <td style={leftStyle(true)}>{i.unit_number}{i.label ? ` — ${i.label}` : ""}</td>
-                  <td style={leftStyle(true)}>{i.tenant_name}</td>
+                  <td style={leftStyle(true)}>{i.tenant_name || "—"}</td>
                   <td style={leftStyle(true)}>{fmtDate(i.lease_end)}</td>
                   <td className={i.months_to_expiry <= 1 ? "value-negative" : undefined}>
                     {fmtMonthsToExpiry(i.months_to_expiry)}
@@ -726,13 +804,23 @@ export default function RentRoll({ token }: { token: string }) {
 
       <h3 className="section-title">Rent roll</h3>
       <p className="hint">
-        One row per unit. Status is the lease's own state — “vacant” means no lease is on file at all. A
-        vacant row shows no tenant/months-to-expiry (there's no current tenancy to report) but still shows
-        its contract rent, labeled “asking” — that potential rent is what feeds economic occupancy above.
-        “Missing data” (shown under actual rent) flags an occupied unit with no recorded rent for the
-        property's latest posted month, kept distinct from a real vacancy.
-        {isAdmin ? "" : " Read-only (admin required to edit a lease)."}
+        {`One row per unit. Status is the ${t("lease")}'s own state — “${t("vacant")}” means no `}
+        {`${t("lease")} is on file at all. A ${t("vacant")} row shows no tenant/months-to-expiry (there's no `}
+        current tenancy to report) but still shows its contract rent, labelled “asking” — that potential rent
+        is what feeds economic occupancy above. “Missing data” (shown under actual rent) flags an occupied
+        {` unit with no recorded rent for the property's latest posted month, kept distinct from a real `}
+        {`${t("vacancy")}.`}
+        {isAdmin
+          ? ` Use “Add ${t("lease")}” / “Edit” on a unit row to record a tenancy.`
+          : ` Read-only (admin required to edit a ${t("lease")}).`}
       </p>
+      {data && propertyGroups.length > 1 && (
+        <div style={{ margin: "0 0 8px" }}>
+          <button type="button" className="btn btn-ghost" onClick={() => setAllOpen(!allOpen)}>
+            {allOpen ? "▾ Collapse all properties" : "▸ Expand all properties"}
+          </button>
+        </div>
+      )}
       {!data ? (
         <p className="hint">Loading…</p>
       ) : (
@@ -768,11 +856,12 @@ export default function RentRoll({ token }: { token: string }) {
               {propertyGroups.map((g) => {
                 // A single group (i.e. a property filter is applied) opens by default —
                 // there's nothing to drill past.
-                const isOpen = openProperties[g.property_id] ?? propertyGroups.length === 1;
+                const isOpen = openProperties[g.property_id] ?? autoExpand;
                 const sum = (pick: (r: RentRollRow) => number | null | undefined) =>
                   g.rows.reduce((t, r) => t + (pick(r) ?? 0), 0);
                 const vacant = g.rows.filter((r) => r.status === "vacant").length;
                 const varianceTotal = sum((r) => r.variance);
+                const arrearsTotal = sum((r) => r.arrears_balance);
                 return (
                   <Fragment key={g.property_id}>
                     <tr
@@ -794,6 +883,11 @@ export default function RentRoll({ token }: { token: string }) {
                       <td className={varianceTotal === 0 ? undefined : varianceTotal > 0 ? "value-positive" : "value-negative"}>
                         {varianceTotal > 0 ? "+" : ""}
                         {fmtCurrency(varianceTotal)}
+                      </td>
+                      {/* Owed is "bad" and in credit is "good", so the tone is inverted
+                          relative to the variance column beside it. */}
+                      <td className={arrearsTotal === 0 ? undefined : arrearsTotal > 0 ? "value-negative" : "value-positive"}>
+                        {fmtCurrency(arrearsTotal)}
                       </td>
                       <td style={leftStyle(true)}>—</td>
                       <td>—</td>
@@ -825,7 +919,7 @@ export default function RentRoll({ token }: { token: string }) {
               })}
               {sortedRows.length === 0 && (
                 <tr className="row-empty">
-                  <td colSpan={isAdmin ? 11 : 10}>No units found for this filter.</td>
+                  <td colSpan={isAdmin ? 12 : 11}>No units found for this filter.</td>
                 </tr>
               )}
             </tbody>
@@ -880,7 +974,28 @@ function RentRollRowView({
       >
         <td>{grouped ? "" : row.property_name}</td>
         <td style={leftStyle(true)}>{row.unit_number}{row.label ? ` — ${row.label}` : ""}</td>
-        <td style={leftStyle(true)}>{row.status === "vacant" ? "—" : row.tenant_name ?? "—"}</td>
+        {/* The "Edit"/"Add lease" control lives in the last of twelve columns, which on any
+            normal window is off the right edge behind a horizontal scroll — so a unit with no
+            tenancy on file offers the action HERE, in the cell whose emptiness is the thing
+            prompting the question. Same handler as the far-right button. */}
+        <td style={leftStyle(true)}>
+          {row.lease_id ? (
+            row.status === "vacant" ? "—" : row.tenant_name || "—"
+          ) : isAdmin ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ padding: "2px 6px" }}
+              onClick={onStartEdit}
+              disabled={isEditing}
+              title="Record the tenancy for this unit — tenant, start date and rent"
+            >
+              {`+ Add ${t("lease")}`}
+            </button>
+          ) : (
+            <span className="muted">{`no ${t("lease")} on file`}</span>
+          )}
+        </td>
         <td>
           {row.contract_rent == null ? "—" : fmtCurrency(row.contract_rent)}
           {row.status === "vacant" && row.contract_rent != null && (
@@ -909,14 +1024,40 @@ function RentRollRowView({
             </>
           )}
         </td>
+        {/* Arrears: the CUMULATIVE balance (everything this tenancy owes as at the window's
+            end), with the window's own MOVEMENT underneath — the monthly figure and the
+            accumulated one, which is what makes the row auditable. Negative = in credit. */}
+        <td className={!row.arrears_balance ? undefined : row.arrears_balance > 0 ? "value-negative" : "value-positive"}>
+          {row.arrears_balance == null ? (
+            "—"
+          ) : row.arrears_balance === 0 && !row.arrears_movement ? (
+            <span className="muted">—</span>
+          ) : (
+            <>
+              {row.arrears_balance < 0
+                ? `${fmtCurrency(-row.arrears_balance)} cr`
+                : fmtCurrency(row.arrears_balance)}
+              <div className="muted" style={{ fontSize: 11 }}>
+                {row.arrears_months_of_rent != null && row.arrears_balance > 0
+                  ? `${row.arrears_months_of_rent.toFixed(1)} mo rent`
+                  : row.arrears_balance < 0
+                    ? "in credit"
+                    : "cleared"}
+                {!!row.arrears_movement &&
+                  ` · ${row.arrears_movement > 0 ? "+" : ""}${fmtCurrency(row.arrears_movement)} this period`}
+                {row.arrears_from_month && ` · from ${fmtMonth(row.arrears_from_month)}`}
+              </div>
+            </>
+          )}
+        </td>
         <td style={leftStyle(true)}>
           {row.status === "vacant"
             ? row.lease_end
-              ? `vacant since ${fmtDate(row.lease_end)}${row.vacant_days != null ? ` (${row.vacant_days}d)` : ""}`
-              : "vacant"
+              ? `${t("vacant")} since ${fmtDate(row.lease_end)}${row.vacant_days != null ? ` (${row.vacant_days}d)` : ""}`
+              : t("vacant")
             : row.lease_end
               ? fmtDate(row.lease_end)
-              : "month-to-month"}
+              : "periodic (rolling)"}
         </td>
         <td>{row.status === "vacant" ? "—" : fmtMonthsToExpiry(row.months_to_expiry)}</td>
         <td>
@@ -942,7 +1083,7 @@ function RentRollRowView({
         {isAdmin && (
           <td>
             <button type="button" className="btn btn-ghost" onClick={onStartEdit} disabled={isEditing}>
-              {row.lease_id ? "Edit" : "Add lease"}
+              {row.lease_id ? "Edit" : `Add ${t("lease")}`}
             </button>
           </td>
         )}
@@ -950,7 +1091,7 @@ function RentRollRowView({
       {showDetail && (
         <LeaseDetailRow
           row={row}
-          colSpan={isAdmin ? 11 : 10}
+          colSpan={isAdmin ? 12 : 11}
           token={token}
           rowId={detailRowId}
           periodFrom={periodFrom}
@@ -961,7 +1102,7 @@ function RentRollRowView({
       )}
       {isEditing && (
         <tr>
-          <td colSpan={isAdmin ? 11 : 10}>
+          <td colSpan={isAdmin ? 12 : 11}>
             <form
               className="card"
               style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", margin: 0 }}
@@ -971,12 +1112,12 @@ function RentRollRowView({
               }}
             >
               <label className="stack">
-                Tenant name
+                Tenant name <span className="muted" style={{ fontWeight: 400 }}>(optional)</span>
                 <input
                   className="input"
-                  value={form.tenant_name}
+                  placeholder="leave blank if not recorded"
+                  value={form.tenant_name ?? ""}
                   onChange={(e) => setForm({ ...form, tenant_name: e.target.value })}
-                  required
                 />
               </label>
               <label className="stack">
@@ -1025,11 +1166,15 @@ function RentRollRowView({
                 </select>
               </label>
               <p className="hint" style={{ margin: "0 0 -4px", flexBasis: "100%" }}>
-                Lease type (fixed/month-to-month) follows the end date above automatically —
-                clear it for a month-to-month lease.
+                {isUK()
+                  ? "Leave the end date blank for a periodic (rolling) tenancy — a fixed term that has " +
+                    "run its course becomes one, and most ASTs are on one. Fill it in only while a " +
+                    "fixed term is still running."
+                  : "Lease type (fixed/month-to-month) follows the end date above automatically — clear " +
+                    "it for a month-to-month lease."}
               </p>
               <label className="stack">
-                Security deposit
+                {t("securityDeposit")}
                 <input
                   className="input"
                   type="number"
@@ -1041,8 +1186,11 @@ function RentRollRowView({
                   }
                 />
               </label>
-              <label className="stack">
-                Concession ($/mo)
+              {/* Not a UK letting concept — hidden rather than relabelled for a £ account (see
+                  terms.ts). The stored value is preserved across saves either way, so hiding the
+                  input can't erase one that a US account set. */}
+              <label className="stack" style={{ display: hasConcessions() ? undefined : "none" }}>
+                {`${t("Concession")} (${currencySymbol()}/mo)`}
                 <input
                   className="input"
                   type="number"
@@ -1077,6 +1225,72 @@ function RentRollRowView({
                   min="1"
                   value={form.escalation_frequency_months ?? 12}
                   onChange={(e) => setForm({ ...form, escalation_frequency_months: Number(e.target.value) })}
+                />
+              </label>
+              {/* Periodic (rolling) tenancy rent history — migration 0024. On an England-style
+                  tenancy the rent rises in discrete steps on a stated date rather than by a
+                  contractual percentage, so these two fields ARE the rent schedule.
+                  `rent_before_increase` matters because arrears is cumulative: without it,
+                  pricing pre-increase months at today's higher rent invents historical debt
+                  for a tenant who paid in full every month. */}
+              <label className="stack">
+                Rent last increased
+                <input
+                  className="input"
+                  type="date"
+                  value={form.last_rent_increase_date ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, last_rent_increase_date: e.target.value || null })
+                  }
+                />
+              </label>
+              <label className="stack">
+                Rent before increase
+                <input
+                  className="input"
+                  type="number"
+                  step="1"
+                  min="0"
+                  // Meaningless without a date to attach it to (the server rejects that
+                  // pairing), so the field stays disabled until one is set.
+                  disabled={!form.last_rent_increase_date}
+                  value={form.rent_before_increase ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, rent_before_increase: e.target.value === "" ? null : Number(e.target.value) })
+                  }
+                />
+              </label>
+              {/* The handover-month escape hatch (migration 0027). A purchase apportions the
+                  rent in hand between seller and buyer, so the first month's collection is a
+                  part period — indistinguishable from a tenant who underpaid unless the
+                  measurement simply starts later. */}
+              <label className="stack">
+                Track arrears from
+                <input
+                  className="input"
+                  type="month"
+                  value={form.arrears_from_month ? form.arrears_from_month.slice(0, 7) : ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      arrears_from_month: e.target.value ? `${e.target.value}-01` : null,
+                    })
+                  }
+                  title="Months before this are outside the arrears measurement — use it to exclude a handover month. Blank = measure from the start."
+                />
+              </label>
+              <label className="stack">
+                Opening arrears
+                <input
+                  className="input"
+                  type="number"
+                  step="1"
+                  // Signed: a tenancy can begin in credit (rent paid up front), so no min.
+                  value={form.opening_arrears ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, opening_arrears: e.target.value === "" ? null : Number(e.target.value) })
+                  }
+                  title="Arrears brought forward at the tenancy's start — debt predating this app's records. Negative = in credit."
                 />
               </label>
               <label className="stack">
@@ -1253,32 +1467,58 @@ function LeaseDetailRow({
         <div className="card" style={{ display: "flex", gap: 24, flexWrap: "wrap", margin: 0 }}>
           {marketRentSection}
           <div className="stack">
-            <span className="muted" style={{ fontSize: 12 }}>Security deposit</span>
+            <span className="muted" style={{ fontSize: 12 }}>{t("securityDeposit")}</span>
             <strong>{row.security_deposit == null ? "—" : fmtCurrency(row.security_deposit)}</strong>
           </div>
+          {hasConcessions() && (
+            <div className="stack">
+              <span className="muted" style={{ fontSize: 12 }}>{t("Concession")}</span>
+              <strong>
+                {row.concession_monthly == null ? "—" : `${fmtCurrency(row.concession_monthly)}/mo`}
+              </strong>
+            </div>
+          )}
           <div className="stack">
-            <span className="muted" style={{ fontSize: 12 }}>Concession</span>
+            <span className="muted" style={{ fontSize: 12 }}>{`${t("Lease")} type`}</span>
             <strong>
-              {row.concession_monthly == null ? "—" : `${fmtCurrency(row.concession_monthly)}/mo`}
+              {row.lease_type === "mtm"
+                ? isUK()
+                  ? "Periodic (rolling)"
+                  : "Month-to-month"
+                : "Fixed term"}
             </strong>
           </div>
+          {/* The rent HISTORY of a periodic tenancy: when the rent last moved, what it was
+              before, and how long it has been. On a rolling UK tenancy this is the rent
+              schedule — a rise is served by notice on a date, not accrued by a contractual
+              percentage — and "months since" is the figure that says a review is overdue. */}
           <div className="stack">
-            <span className="muted" style={{ fontSize: 12 }}>Lease type</span>
-            <strong>{row.lease_type === "mtm" ? "Month-to-month" : "Fixed term"}</strong>
-          </div>
-          <div className="stack">
-            <span className="muted" style={{ fontSize: 12 }}>Escalation</span>
+            <span className="muted" style={{ fontSize: 12 }}>Rent last increased</span>
             <strong>
-              {row.escalation_pct == null
-                ? "—"
-                : `${row.escalation_pct}% every ${row.escalation_frequency_months ?? 12} mo`}
+              {row.last_rent_increase_date ? fmtDate(row.last_rent_increase_date) : "never"}
             </strong>
-            {row.escalation_pct != null && (
+            {row.months_since_last_increase != null && (
               <span className="hint" style={{ margin: 0 }}>
-                next bump: {row.next_escalation_date ? fmtDate(row.next_escalation_date) : "—"}
+                {`${row.months_since_last_increase} mo ago`}
+                {row.last_rent_increase_date ? "" : ` (since ${t("lease")} start)`}
+                {row.rent_before_increase != null && `, was ${fmtCurrency(row.rent_before_increase)}`}
               </span>
             )}
           </div>
+          {/* A contractual escalator is a US fixed-term device; only show it where one is
+              actually recorded, so a UK tenancy's panel isn't cluttered with an empty field
+              for a mechanism it doesn't use. */}
+          {row.escalation_pct != null && (
+            <div className="stack">
+              <span className="muted" style={{ fontSize: 12 }}>{t("Escalation")}</span>
+              <strong>
+                {`${row.escalation_pct}% every ${row.escalation_frequency_months ?? 12} mo`}
+              </strong>
+              <span className="hint" style={{ margin: 0 }}>
+                next: {row.next_escalation_date ? fmtDate(row.next_escalation_date) : "—"}
+              </span>
+            </div>
+          )}
           <div className="stack">
             <span className="muted" style={{ fontSize: 12 }}>
               Rent variance{periodLabel ? ` (${periodLabel})` : ""}

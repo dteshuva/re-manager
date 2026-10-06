@@ -20,6 +20,7 @@ and trivial to unit-test.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import re
@@ -49,6 +50,16 @@ class RawExtraction:
     rows: list[dict] = field(default_factory=list)  # {unit, category, amount, classification}
     backend: str = "heuristic"
     warnings: list[str] = field(default_factory=list)
+    # The OTHER month this statement could reasonably post to, when the document gives two
+    # answers — the period the agent says the statement covers, and the tenancy period the
+    # rent is for. ``month`` holds the one the parser chose and explained; this holds the one
+    # it did not, so a saved format can say "this sender's statements go to the other one"
+    # without re-reading the PDF. None when the document only offers one answer.
+    alt_month: date | None = None
+    # The property as the statement PRINTED it, kept even after it has been matched to a
+    # stored property. Teaching a format means recording "this sender's name for that
+    # property", so the sender's name has to survive the matching.
+    raw_property_name: str | None = None
 
 
 # --------------------------------------------------------------------------- helpers
@@ -406,15 +417,30 @@ def _rows_from_text(text: str) -> list[dict]:
     return out
 
 
-def _extract_text_and_tables(content: bytes, max_pages: int) -> tuple[str, list[list[list]]]:
+def _extract_doc(content: bytes, max_pages: int):
+    """Everything a parser below may need from the PDF, read once.
+
+    ``text`` and ``tables`` are what the single-property parsers have always used. ``lines``
+    additionally keeps each word's x position, which is the only way to tell which COLUMN a
+    figure sits in on a tabular statement — see the sectioned-portfolio parser.
+    """
     text_parts: list[str] = []
     tables: list[list[list]] = []
+    lines: list["_DocLine"] = []
     with pdfplumber.open(io.BytesIO(content)) as pdf:
-        for page in pdf.pages[:max_pages]:
-            text_parts.append(page.extract_text() or "")
+        for page_no, page in enumerate(pdf.pages[:max_pages]):
+            text_parts.append(_clean(page.extract_text() or ""))
             for tbl in page.extract_tables() or []:
-                tables.append(tbl)
-    return "\n".join(text_parts), tables
+                tables.append(
+                    [[_clean(c) if isinstance(c, str) else c for c in row] for row in tbl]
+                )
+            lines.extend(_page_lines(page, page_no))
+    return "\n".join(text_parts), tables, lines
+
+
+def _extract_text_and_tables(content: bytes, max_pages: int) -> tuple[str, list[list[list]]]:
+    text, tables, _lines = _extract_doc(content, max_pages)
+    return text, tables
 
 
 # ------------------------------------------------------- multi-property rent rolls
@@ -538,6 +564,11 @@ class StatementFile:
     format: str
     extractions: list[RawExtraction]
     warnings: list[str] = field(default_factory=list)
+    # Identifies the LAYOUT, so a saved set of corrections for this sender can be found
+    # again next month. Computed from the document alone — never from the account's data —
+    # so the same file fingerprints the same whoever uploads it. See :func:`fingerprint`.
+    fingerprint: str = ""
+    sample: str = ""
 
 
 def _money(x: float) -> str:
@@ -910,6 +941,748 @@ def _build_rent_roll(
     return StatementFile(format="rent_roll", extractions=extractions, warnings=warnings)
 
 
+# --------------------------------------------- sectioned portfolio statements
+# A THIRD shape, and again a different shape rather than a different layout. The rent roll
+# above puts each property on ONE line with its rent at the end. An agent running on
+# statement software sends the same portfolio as a sequence of TABLES instead: an address as
+# a section heading, a row of column names beneath it, the figures, and a "Property Subtotal"
+# closing each block, with "Statement Grand Totals" at the end:
+#
+#     Income/Expenses per Property
+#     64 King Edward Street Gateshead NE8 3PR
+#     Property / Unit    Income  Expenses  Mgt Fee  Mgt VAT  Other  Total Due
+#                       £725.00     £0.00   £72.50    £0.00  £0.00    £652.50
+#     Property Subtotal £725.00     £0.00   £72.50    £0.00  £0.00    £652.50
+#
+# Read by either parser above this is silently wrong in the expensive direction: the address
+# line carries no amount, so the rent roll declines the file, and the single-property path
+# then takes the FIRST address as the whole file's property and whatever total it can find as
+# the only line item — three properties collapsed into one, every rent and fee lost.
+#
+# What makes this shape readable is geometry, not words. The figures are right-aligned under
+# their headings, so "which column is this number in" is a question about x coordinates. Asked
+# of a text line instead it has no good answer: splitting on whitespace cannot tell the one
+# column "Mgt Fee" from the two columns "Mgt" and "Fee", and the row that carries the actual
+# figures has no label at all, so pdfplumber's own table extraction drops it. This parser
+# therefore works from WORD BOXES: group each line's words into columns by the gaps between
+# them, then give every figure to the column whose edge it lines up with.
+#
+# Three things it must get right, each a way to post wrong money silently:
+#
+# * **Expenses are stored positive.** NOI is rent MINUS operating, so a management fee
+#   imported as the -£192.50 the statement prints would raise NOI by the fee instead of
+#   lowering it. The sign convention is read off the document and normalised.
+# * **The statement's arithmetic is never a line item.** Subtotals, grand totals and a
+#   "Total Due" column are the statement checking itself; they are used to RECONCILE what was
+#   read and are never imported.
+# * **One month for the whole statement.** A collection statement is one period's collection,
+#   and tenancy periods inside it start on different days — posting each property by its own
+#   rent period would split one statement across two months. The statement's own declared
+#   period decides, and a rent period pointing elsewhere is reported, not silently followed.
+
+
+@dataclass
+class _Word:
+    text: str
+    x0: float
+    x1: float
+
+
+@dataclass
+class _Column:
+    name: str
+    x0: float
+    x1: float
+
+
+@dataclass
+class _DocLine:
+    page: int
+    top: float
+    words: list[_Word] = field(default_factory=list)
+
+    @property
+    def text(self) -> str:
+        return " ".join(w.text for w in self.words)
+
+
+@dataclass
+class _Block:
+    """One property's table under one heading."""
+
+    name: str  # resolved property name (a stored one when it matched)
+    raw: str  # the label exactly as the statement printed it
+    known: bool
+    heading: str
+    columns: list[_Column] = field(default_factory=list)
+    rows: list[tuple[str, dict[str, float]]] = field(default_factory=list)
+    subtotal: dict[str, float] | None = None
+
+
+_GRAND_TOTAL_RE = re.compile(
+    r"^\s*(?:statement\s+)?grand\s*totals?\b|^\s*statement\s+totals?\b", re.IGNORECASE
+)
+_SUB_TOTAL_RE = re.compile(
+    r"^\s*(?:property\s+|unit\s+)?sub\s*-?\s*totals?\b|^\s*totals?\b", re.IGNORECASE
+)
+# A column set carrying any of these is a DETAIL table (one row per receipt/charge) rather
+# than a per-property summary of columns.
+_DETAIL_COL_RE = re.compile(r"received|demanded|b\s*/\s*f|c\s*/\s*f", re.IGNORECASE)
+_EXPENSE_HEADING_RE = re.compile(
+    r"expense|expenditure|charge|cost|disbursement|outgoing", re.IGNORECASE
+)
+_INCOME_COL_RE = re.compile(
+    r"^(?:total\s+)?(?:income|rent|receipts?|revenue|collected|demanded|received)\b",
+    re.IGNORECASE,
+)
+# Columns that restate what the other columns already say. Never imported.
+_ARITHMETIC_COL_RE = re.compile(
+    r"^(?:total|due|balance|net|b\s*/\s*f|c\s*/\s*f|brought\s*forward|carried\s*forward|"
+    r"opening|closing|property\s*/?\s*unit|unit|property|tenant|description|date|ref)\b",
+    re.IGNORECASE,
+)
+_ABBREV_RE = re.compile(r"\b(?:mgt|mgmt|mngt|mgnt)\b", re.IGNORECASE)
+_PUA_RE = re.compile(r"[-]")
+
+# Two properties before the shape is believed, exactly as for a rent roll: one address above
+# one table is an ordinary single-property statement and must keep its old path.
+_MIN_SECTION_PROPERTIES = 2
+
+
+def _clean(s: str | None) -> str:
+    """Drop private-use glyphs. Statement software sets its bullets and icons from an icon
+    font in the private-use area; they arrive as characters, and left alone one becomes a
+    "category" with the statement's closing balance against it."""
+    return _PUA_RE.sub(" ", s) if s else (s or "")
+
+
+def _page_lines(page, page_no: int, tol: float = 3.0) -> list[_DocLine]:
+    """A page's words grouped into visual lines, each line's words left-to-right."""
+    placed: list[tuple[float, _Word]] = []
+    for w in page.extract_words() or []:
+        txt = _clean(str(w.get("text", ""))).strip()
+        if not txt:
+            continue
+        try:
+            placed.append((float(w["top"]), _Word(txt, float(w["x0"]), float(w["x1"]))))
+        except (KeyError, TypeError, ValueError):
+            continue
+    placed.sort(key=lambda p: (p[0], p[1].x0))
+    lines: list[_DocLine] = []
+    for top, word in placed:
+        if lines and abs(top - lines[-1].top) <= tol:
+            lines[-1].words.append(word)
+        else:
+            lines.append(_DocLine(page=page_no, top=top, words=[word]))
+    for ln in lines:
+        ln.words.sort(key=lambda w: w.x0)
+    return lines
+
+
+def _column_groups(words: list[_Word]) -> list[_Column]:
+    """Split a line's words into columns on the gaps between them.
+
+    The threshold is derived from the line's own character width rather than fixed, so the
+    same rule works for a 7pt table and an 11pt one: words a space apart ("Mgt" "Fee") are
+    one column, words a tab apart are two.
+    """
+    if not words:
+        return []
+    widths = sorted((w.x1 - w.x0) / max(len(w.text), 1) for w in words)
+    char_w = widths[len(widths) // 2]
+    gap_limit = max(4.0, char_w * 2.5)
+    groups: list[list[_Word]] = [[words[0]]]
+    for prev, word in zip(words, words[1:]):
+        if word.x0 - prev.x1 > gap_limit:
+            groups.append([word])
+        else:
+            groups[-1].append(word)
+    return [
+        _Column(" ".join(w.text for w in g), g[0].x0, g[-1].x1) for g in groups
+    ]
+
+
+def _cell_value(word: _Word) -> float | None:
+    """The figure in a cell, or None when the word isn't one.
+
+    Stricter than :func:`_parse_amount`, which is given a cell already known to be a figure:
+    here anything on the line may be offered, and a date (18/10/26) stripped of its
+    punctuation would otherwise parse as 181026.
+    """
+    t = word.text.strip()
+    if not t or t in {"-", "–", "—"}:
+        return None
+    if "/" in t or ":" in t:
+        return None
+    if _MONEY_RE.fullmatch(t) or re.fullmatch(r"\(?-?[£$€]?\s?-?\d[\d,]*(?:\.\d+)?\)?-?", t):
+        return _parse_amount(t)
+    return None
+
+
+_SECTION_COLUMN_WORD_RE = re.compile(
+    r"income|incomes|expense|expenses|expenditure|fee|fees|vat|other|others|total|totals|due|"
+    r"tenant|tenants|unit|units|property|properties|rent|rents|charge|charges|amount|amounts|"
+    r"net|gross|balance|arrears|paid|payment|payments|received|receipt|receipts|demanded|"
+    r"demand|date|dates|description|period|opening|closing|brought|carried|forward|deposit|"
+    r"deposits|commission|management|mgt|mgmt|mngt|b|c|f|ref|reference|invoice|supplier|"
+    r"contractor|works|category|type|share|collected|owed|owing",
+    re.IGNORECASE,
+)
+
+def _is_column_header(groups: list[_Column]) -> bool:
+    """Whether this line names the columns of a table. Needs at least two columns and for
+    most of them to be words a statement actually puts in a column heading — so an address
+    or a sentence is never mistaken for one."""
+    if len(groups) < 2:
+        return False
+    named = sum(
+        1
+        for g in groups
+        if any(_SECTION_COLUMN_WORD_RE.fullmatch(w) for w in re.split(r"[\s/]+", g.name) if w)
+    )
+    return named >= 2 and named * 2 >= len(groups)
+
+
+
+
+def _row_cells(
+    words: list[_Word], columns: list[_Column]
+) -> tuple[str, dict[str, float]]:
+    """Split a data line into its row label and its figures by column.
+
+    A figure belongs to the column whose edge it lines up with. Numbers in these tables are
+    right-aligned, so the right edges agree to within a point; the left edges are compared
+    too so a left-aligned column still matches.
+    """
+    if len(columns) < 2:
+        return " ".join(w.text for w in words), {}
+    first_value_x = columns[1].x0
+    label_words: list[str] = []
+    cells: dict[str, float] = {}
+    for w in words:
+        value = _cell_value(w)
+        if value is None or w.x1 < first_value_x:
+            # Anything that isn't a figure, and any figure still inside the label column,
+            # belongs to the row's label ("Rent 19/09/26 - 18/10/26").
+            label_words.append(w.text)
+            continue
+        best, best_d = None, None
+        for col in columns[1:]:
+            d = min(abs(w.x1 - col.x1), abs(w.x0 - col.x0))
+            if best_d is None or d < best_d:
+                best, best_d = col, d
+        if best is not None and best_d is not None and best_d <= 30:
+            key = best.name.strip().lower()
+            cells[key] = round(cells.get(key, 0.0) + value, 2)
+    return " ".join(label_words).strip(" .:\t-"), cells
+
+
+def _tidy_label(name: str) -> str:
+    """A column or row label as a category name: abbreviations expanded so it snaps to an
+    existing category instead of coining "Mgt Fee" beside "Management Fee"."""
+    out = _ABBREV_RE.sub("Management", name).strip(" .:/-")
+    out = re.sub(r"\s+", " ", out)
+    return out
+
+
+def _parse_sectioned(
+    lines: list[_DocLine], text: str, known_properties: list[str], known_categories: list[str]
+) -> StatementFile | None:
+    """Parse a sectioned portfolio statement, or return None if this isn't one."""
+    blocks: list[_Block] = []
+    file_totals: list[tuple[str, dict[str, float]]] = []
+    pending_columns: list[_Column] = []
+    heading = ""
+    cur: _Block | None = None
+
+    for ln in lines:
+        words = ln.words
+        if not words:
+            continue
+        groups = _column_groups(words)
+        first = groups[0]
+        # A figure BEYOND the first column is what makes a line a data row. The test cannot
+        # be "does this line contain a number": a property is called "64 King Edward Street",
+        # and its house number would make every address heading look like a row of figures.
+        outer_figure = any(
+            _cell_value(w) is not None and w.x0 >= first.x1 for w in words
+        )
+
+        if not outer_figure:
+            if len(groups) <= 2:
+                known = _match_known_property(first.name, known_properties)
+                address, _note = _split_address(first.name)
+                if known or address:
+                    cur = _Block(
+                        name=known or address or first.name,
+                        raw=first.name.strip(),
+                        known=known is not None,
+                        heading=heading,
+                        columns=list(pending_columns),
+                    )
+                    blocks.append(cur)
+                    continue
+            if _is_column_header(groups):
+                # Kept even when no property block is open, so an agent that prints the
+                # column names once above the whole section is read the same way.
+                pending_columns = groups
+                if cur is not None:
+                    cur.columns = groups
+                continue
+            if len(groups) <= 2 and re.search(r"[A-Za-z]{2}", ln.text):
+                heading = ln.text
+                cur = None
+            continue
+
+        label, cells = _row_cells(words, cur.columns if cur and cur.columns else groups)
+        if _GRAND_TOTAL_RE.match(label):
+            if cells:
+                file_totals.append((label, cells))
+            cur = None
+            continue
+        if cur is None or not cur.columns or not cells:
+            continue
+        if _SUB_TOTAL_RE.match(label):
+            cur.subtotal = cells
+        else:
+            cur.rows.append((label, cells))
+
+    usable = [b for b in blocks if b.columns and (b.rows or b.subtotal)]
+    if len({b.name.strip().lower() for b in usable}) < _MIN_SECTION_PROPERTIES:
+        return None
+    return _build_sectioned(usable, file_totals, text, known_categories)
+
+
+def _sum_rows(rows: list[tuple[str, dict[str, float]]]) -> dict[str, float]:
+    """Add a block's data rows column by column — the fallback when a block prints no
+    subtotal of its own (a property with several units and no per-property line)."""
+    out: dict[str, float] = {}
+    for _label, cells in rows:
+        for key, value in cells.items():
+            out[key] = round(out.get(key, 0.0) + value, 2)
+    return out
+
+
+def _pick_col(columns: list[_Column], *patterns: str) -> str | None:
+    """The first column matching the first pattern that matches anything — the preference
+    order a caller writes out ("Received" before "Demanded")."""
+    keys = [c.name.strip().lower() for c in columns]
+    for pattern in patterns:
+        for key in keys:
+            if re.search(pattern, key, re.IGNORECASE):
+                return key
+    return None
+
+
+def _detail_item(label: str, amount: float, demanded: float | None, dayfirst: bool) -> dict:
+    """One row of a detail table: its own period read off the label, the label reduced to a
+    category name ("Rent 19/09/26 - 18/10/26" → "Rent")."""
+    month = start = end = None
+    period = ""
+    pm = _PERIOD_RE.search(label)
+    if pm:
+        start, end = _parse_dmy(pm.group(1), dayfirst), _parse_dmy(pm.group(2), dayfirst)
+        period = pm.group(0)
+        if start and end:
+            month, end, _fixed = _period_month(start, end)
+        label = (label[: pm.start()] + " " + label[pm.end():]).strip(" ,.-:")
+    return {
+        "label": _tidy_label(label) or "Rent",
+        "raw": label.strip() or "Rent",
+        "amount": amount,
+        "demanded": demanded,
+        "month": month,
+        "period": period,
+    }
+
+
+def _build_sectioned(
+    blocks: list[_Block],
+    file_totals: list[tuple[str, dict[str, float]]],
+    text: str,
+    known_categories: list[str],
+) -> StatementFile:
+    """Turn the parsed blocks into one extraction per property, plus the file-level notes.
+
+    Nothing is allocated here, unlike a rent roll: this shape states every property's own
+    income and its own share of every charge, so the figures are taken as the statement gives
+    them and checked back against its grand totals.
+    """
+    statement_month = _detect_month(text)
+    dayfirst = _dayfirst(text)
+    warnings: list[str] = []
+
+    order: list[str] = []
+    by_prop: dict[str, list[_Block]] = {}
+    for b in blocks:
+        key = b.name.strip().lower()
+        if key not in by_prop:
+            by_prop[key] = []
+            order.append(key)
+        by_prop[key].append(b)
+
+    # ---- read each property's figures ------------------------------------------------
+    parsed: list[dict] = []
+    expense_values: list[float] = []
+    for key in order:
+        prop: dict = {
+            "name": by_prop[key][0].name,
+            "raw": by_prop[key][0].raw,
+            "income_items": [],
+            "expense_items": [],
+            "summary_income": None,
+            "summary_expense": None,
+            "summary_other": [],
+            "shortfall": [],
+        }
+        for b in by_prop[key]:
+            cells = b.subtotal if b.subtotal is not None else _sum_rows(b.rows)
+            cols = b.columns[1:]
+            if any(_DETAIL_COL_RE.search(c.name) for c in cols):
+                side = "expense" if _EXPENSE_HEADING_RE.search(b.heading) else "income"
+                vcol = _pick_col(cols, r"received", r"\bpaid\b", r"amount", r"demanded", r"\bnet\b")
+                dcol = _pick_col(cols, r"demanded", r"charged", r"\bdue\b")
+                if vcol is None:
+                    continue
+                for label, rc in b.rows:
+                    if _SUB_TOTAL_RE.match(label) or _GRAND_TOTAL_RE.match(label):
+                        continue
+                    amount = rc.get(vcol)
+                    if amount is None:
+                        continue
+                    item = _detail_item(label, amount, rc.get(dcol) if dcol else None, dayfirst)
+                    prop["expense_items" if side == "expense" else "income_items"].append(item)
+                    if side == "expense":
+                        expense_values.append(amount)
+            else:
+                for col in cols:
+                    ckey = col.name.strip().lower()
+                    amount = cells.get(ckey)
+                    if amount is None or _ARITHMETIC_COL_RE.match(ckey):
+                        continue
+                    if _INCOME_COL_RE.match(ckey):
+                        prop["summary_income"] = amount
+                    elif re.match(r"^expenses?\b|^expenditure", ckey):
+                        prop["summary_expense"] = amount
+                        expense_values.append(amount)
+                    else:
+                        prop["summary_other"].append((col.name.strip(), amount))
+                        expense_values.append(amount)
+        parsed.append(prop)
+
+    # ---- sign convention --------------------------------------------------------------
+    # NOI is rent MINUS operating, so expenses are stored as positive magnitudes. A statement
+    # that prints its charges as negatives ("Management Fee -£192.50") would, taken at face
+    # value, RAISE NOI by the fee. Which convention this document uses is decided from the
+    # document: if its charges are overwhelmingly negative they are all flipped, which leaves
+    # a genuine credit negative — still the right sign for a refund.
+    nonzero = [v for v in expense_values if abs(v) > 0.005]
+    flip = bool(nonzero) and sum(1 for v in nonzero if v < 0) * 5 >= len(nonzero) * 4
+    sign = -1.0 if flip else 1.0
+    if flip:
+        warnings.append(
+            "This statement prints its charges as negative amounts; they were imported as "
+            "positive expenses, which is how the P&L subtracts them."
+        )
+
+    rent_category = _snap_category("Rent", known_categories)
+    extractions: list[RawExtraction] = []
+    period_months: list[set[date]] = []
+    rent_total = 0.0
+    charge_totals: dict[str, float] = {}
+
+    for prop in parsed:
+        ex = RawExtraction(
+            property_name=prop["name"],
+            raw_property_name=prop["raw"],
+            month=statement_month,
+            backend="sectioned",
+        )
+        rows: list[dict] = []
+
+        # Income: the itemised rows when the statement gives them (they carry the tenancy
+        # period and the statement's own wording), otherwise the summary column.
+        income_items = prop["income_items"]
+        detail_income = round(sum(i["amount"] for i in income_items), 2)
+        if income_items:
+            for item in income_items:
+                category = _snap_category(item["label"], known_categories)
+                rows.append(
+                    {
+                        "unit": None,
+                        "category": category,
+                        "raw_category": item["raw"],
+                        "amount": item["amount"],
+                        "classification": _classify(category) or "rent",
+                        "kind": "rent",
+                        "note": f"period {item['period']}" if item["period"] else None,
+                    }
+                )
+                if item["demanded"] is not None and abs(item["demanded"] - item["amount"]) > 0.005:
+                    ex.warnings.append(
+                        f"{_money(item['demanded'])} was demanded but {_money(item['amount'])} "
+                        f"received — a shortfall of "
+                        f"{_money(item['demanded'] - item['amount'])}. Only what was received "
+                        "is imported."
+                    )
+            if prop["summary_income"] is not None and abs(prop["summary_income"] - detail_income) > 0.01:
+                ex.warnings.append(
+                    f"⚠ The itemised income totals {_money(detail_income)} but this property's "
+                    f"summary row says {_money(prop['summary_income'])}. Check the rows below."
+                )
+        elif prop["summary_income"] is not None:
+            rows.append(
+                {
+                    "unit": None,
+                    "category": rent_category,
+                    "raw_category": "Income",
+                    "amount": prop["summary_income"],
+                    "classification": "rent",
+                    "kind": "rent",
+                    "note": None,
+                }
+            )
+
+        # Expenses: itemised when given, otherwise the summary's single Expenses column —
+        # never both, or the itemised charges would be counted twice over their own total.
+        expense_items = prop["expense_items"]
+        if expense_items:
+            for item in expense_items:
+                category = _snap_category(item["label"], known_categories)
+                rows.append(
+                    {
+                        "unit": None,
+                        "category": category,
+                        "raw_category": item["raw"],
+                        "amount": round(item["amount"] * sign, 2),
+                        "classification": _classify(category) or "operating",
+                        "kind": "line",
+                        "note": f"period {item['period']}" if item["period"] else None,
+                    }
+                )
+            detail_expense = round(sum(i["amount"] for i in expense_items), 2)
+            if prop["summary_expense"] is not None and abs(prop["summary_expense"] - detail_expense) > 0.01:
+                ex.warnings.append(
+                    f"⚠ The itemised expenses total {_money(detail_expense)} but this "
+                    f"property's summary row says {_money(prop['summary_expense'])}."
+                )
+        elif prop["summary_expense"]:
+            rows.append(
+                {
+                    "unit": None,
+                    "category": _snap_category("Expenses", known_categories),
+                    "raw_category": "Expenses",
+                    "amount": round(prop["summary_expense"] * sign, 2),
+                    "classification": "operating",
+                    "kind": "line",
+                    "note": None,
+                }
+            )
+
+        # The remaining summary columns — management fee, its VAT, anything the agent calls
+        # "Other" — are charges stated per property and appear nowhere else on the statement.
+        for label, amount in prop["summary_other"]:
+            if abs(amount) < 0.005:
+                continue
+            category = _snap_category(_tidy_label(label), known_categories)
+            rows.append(
+                {
+                    "unit": None,
+                    "category": category,
+                    "raw_category": label,
+                    "amount": round(amount * sign, 2),
+                    "classification": _classify(category) or "operating",
+                    "kind": "line",
+                    "note": None,
+                }
+            )
+
+        # A tenancy period pointing at another month is the one place this parser overrides
+        # what a row says. Whether that is worth a word per property or one word for the file
+        # is decided after every property is read — see below.
+        months = {i["month"] for i in income_items if i["month"]}
+        period_months.append(months)
+        if statement_month is None:
+            ex.month = next(iter(sorted(months)), None)
+        elif len(months) == 1 and months != {statement_month}:
+            ex.alt_month = next(iter(months))
+
+        ex.rows = rows
+        if not rows:
+            ex.warnings.append("No figures were read for this property.")
+        rent_total = round(rent_total + sum(r["amount"] for r in rows if r["kind"] == "rent"), 2)
+        for r in rows:
+            if r["kind"] != "rent":
+                charge_totals[r["category"]] = round(
+                    charge_totals.get(r["category"], 0.0) + r["amount"], 2
+                )
+        extractions.append(ex)
+
+    # ---- the month, said once -----------------------------------------------------------
+    # Tenancies in one portfolio start on different days, so their periods straddle the month
+    # end in different directions. Posting each property by its own period would split ONE
+    # collection statement across two months, so the statement's own declared period decides
+    # for all of them. When the tenancy periods agree with each other and disagree with it,
+    # that is one fact about the file rather than a repeated note against every property.
+    stated = [m for m in period_months if m]
+    if statement_month and stated:
+        everywhere = set().union(*stated)
+        if len(everywhere) == 1 and everywhere != {statement_month}:
+            other = next(iter(everywhere))
+            warnings.append(
+                f"Every rent period here falls mostly in {other:%b %Y}, while the statement's "
+                f"own period is {statement_month:%b %Y} — which is the month used, so the "
+                f"whole statement posts together. Change the month on each property to post "
+                f"to {other:%b %Y} instead."
+            )
+        else:
+            for ex, months in zip(extractions, period_months):
+                if months and months != {statement_month}:
+                    named = ", ".join(sorted(m.strftime("%b %Y") for m in months))
+                    ex.warnings.append(
+                        f"Its rent period falls mostly in {named}, but it posts to "
+                        f"{statement_month:%b %Y} with the rest of this statement. Change the "
+                        "month above to post it separately."
+                    )
+
+    # ---- reconcile against the statement's own grand totals ----------------------------
+    warnings.insert(0, _reconcile_sectioned(parsed, file_totals, rent_total, charge_totals, sign))
+    if statement_month is None:
+        warnings.append(
+            "Could not read the statement's period — set the month for each property below."
+        )
+    return StatementFile(format="sectioned", extractions=extractions, warnings=warnings)
+
+
+def _reconcile_sectioned(
+    parsed: list[dict],
+    file_totals: list[tuple[str, dict[str, float]]],
+    rent_total: float,
+    charge_totals: dict[str, float],
+    sign: float,
+) -> str:
+    """One sentence saying whether what was read adds up to what the statement says it is.
+
+    This is the check worth having: every figure here was read positionally out of a table,
+    and the statement already prints the answer. Agreeing with it to the penny is strong
+    evidence that no column was misread and no property was missed; disagreeing is worth
+    seeing before anything is posted rather than at a year end.
+    """
+    stated_income = None
+    for _label, cells in file_totals:
+        for key, value in cells.items():
+            if _INCOME_COL_RE.match(key) and not _ARITHMETIC_COL_RE.match(key):
+                stated_income = value
+                break
+        if stated_income is not None:
+            break
+
+    charges = round(sum(charge_totals.values()), 2)
+    head = (
+        f"{len(parsed)} properties — rent {_money(rent_total)}, "
+        f"charges {_money(charges)}."
+    )
+    if stated_income is None:
+        return head
+    if abs(stated_income - rent_total) < 0.01:
+        return f"{head} Matches the statement's stated total income of {_money(stated_income)}."
+    return (
+        f"⚠ {head} The statement states total income of {_money(stated_income)}, a difference "
+        f"of {_money(stated_income - rent_total)}. Check the rows below before uploading."
+    )
+
+
+# ----------------------------------------------------------------- layout fingerprint
+# Two statements from one agent differ in every figure, every date and every property, and
+# are otherwise the same document. A fingerprint has to survive all of that and still
+# separate one agent from another, so it is taken from the parts that do NOT vary:
+#
+#   * the shape the parsers resolved the file to,
+#   * the names of the columns, as a set (a portfolio that grew by a property must not
+#     change the answer),
+#   * the boilerplate — headings, labels, the covering note — with every number, date and
+#     month name masked out.
+#
+# Addresses are excluded outright: they are the one piece of boilerplate that changes when
+# the portfolio does. Nothing here reads the account's own data, so the fingerprint of a file
+# is a property of the file.
+
+_FP_MASKS = (
+    re.compile(r"[£$€]\s?\(?-?\d[\d,]*(?:\.\d+)?\)?"),
+    re.compile(r"\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}"),
+    re.compile(r"\b(?:%s)[a-z]*\.?" % _MONTHS, re.IGNORECASE),
+    re.compile(r"\d+"),
+)
+_FP_MAX_LINES = 60
+
+
+def _fp_normalise(line: str) -> str:
+    out = line
+    for pattern in _FP_MASKS:
+        out = pattern.sub("#", out)
+    return re.sub(r"\s+", " ", out).strip().lower()
+
+
+def fingerprint(lines: list["_DocLine"], shape: str) -> tuple[str, str]:
+    """``(hash, sample)`` identifying this statement's LAYOUT.
+
+    The sample is the masked text the hash was taken from, kept so a person can see why two
+    files were treated as the same format — a hash alone is unarguable in the wrong way.
+    """
+    chrome: set[str] = set()
+    columns: set[str] = set()
+    for ln in lines:
+        words = ln.words
+        if not words:
+            continue
+        groups = _column_groups(words)
+        if any(_cell_value(w) is not None and w.x0 >= groups[0].x1 for w in words):
+            continue  # a row of figures: its labels vary with the portfolio
+        if _is_column_header(groups):
+            columns.update(_fp_normalise(g.name) for g in groups)
+            continue
+        address, _note = _split_address(groups[0].name)
+        if address:
+            continue
+        norm = _fp_normalise(ln.text)
+        if 3 <= len(norm) <= 90 and len(re.findall(r"[a-z]", norm)) >= 2:
+            chrome.add(norm)
+
+    body = sorted(chrome)[:_FP_MAX_LINES]
+    sample = "\n".join([f"shape={shape}", "columns=" + " | ".join(sorted(columns)), *body])
+    # The HASH is taken from the shape and the boilerplate only — not from the column names,
+    # which are kept in the sample for a person to read. A column set grows the first time a
+    # section that was empty has something in it (a month with a repair in it adds the expense
+    # table's columns), and a fingerprint that changed for that reason would hand the operator
+    # back a format they had already taught. The boilerplate does not move for that reason.
+    digest = hashlib.sha256(("\n".join([f"shape={shape}", *body])).encode("utf-8"))
+    return digest.hexdigest()[:32], sample
+
+
+def sample_lines(sample: str) -> set[str]:
+    """The boilerplate out of a stored sample, for comparing two layouts that did not hash
+    alike. Drops the shape and column lines the sample carries for display."""
+    return {
+        ln
+        for ln in sample.splitlines()[2:]
+        if ln.strip()
+    }
+
+
+def layout_similarity(a: str, b: str) -> float:
+    """How alike two layouts' boilerplate is, 0..1.
+
+    An agent that adds a line to its covering note has not become a different agent, and a
+    fingerprint is all-or-nothing about exactly that. This is the second question asked when
+    the hashes differ — see the format lookup in the import router, which says out loud when
+    a format was matched this way rather than exactly.
+    """
+    sa, sb = sample_lines(a), sample_lines(b)
+    if not sa or not sb:
+        return 0.0
+    return len(sa & sb) / len(sa | sb)
+
+
 # ------------------------------------------------------------------------- ollama
 
 
@@ -1052,6 +1825,11 @@ def _extract_single(
     return ex
 
 
+def _fingerprinted(result: StatementFile, lines: list["_DocLine"]) -> StatementFile:
+    result.fingerprint, result.sample = fingerprint(lines, result.format)
+    return result
+
+
 def extract_statements(
     content: bytes,
     *,
@@ -1064,17 +1842,24 @@ def extract_statements(
 ) -> StatementFile:
     """Parse a PDF into the statement(s) it contains. **The entry point to use.**
 
-    One PDF is not always one statement. A portfolio agent's rent roll lists every property
-    on its own line, so it comes back as ``format="rent_roll"`` with one extraction per
-    property; everything else comes back as ``format="single"`` with exactly one. The rent
-    roll is tried first and returns None unless the shape is unmistakable, so an ordinary
+    One PDF is not always one statement, and a portfolio arrives in more than one shape.
+    A rent roll lists every property on its own line (``format="rent_roll"``); a sectioned
+    statement gives each property its own table (``format="sectioned"``). Both come back with
+    one extraction per property. Everything else is ``format="single"`` with exactly one.
+    Each multi-property parser returns None unless its shape is unmistakable, so an ordinary
     statement takes the same path it always has. Never touches the database.
     """
-    text, tables = _extract_text_and_tables(content, max_pages)
+    text, tables, lines = _extract_doc(content, max_pages)
+
+    # Most specific shape first. Each returns None unless its shape is unmistakable, so an
+    # ordinary single-property statement still reaches _extract_single untouched.
+    sectioned = _parse_sectioned(lines, text, known_properties, known_categories)
+    if sectioned is not None:
+        return _fingerprinted(sectioned, lines)
 
     roll = _parse_rent_roll(text, known_properties, known_categories)
     if roll is not None:
-        return roll
+        return _fingerprinted(roll, lines)
 
     ex = _extract_single(
         text,
@@ -1085,7 +1870,7 @@ def extract_statements(
         ollama_url=ollama_url,
         ollama_model=ollama_model,
     )
-    return StatementFile(format="single", extractions=[ex])
+    return _fingerprinted(StatementFile(format="single", extractions=[ex]), lines)
 
 
 def extract_statement(

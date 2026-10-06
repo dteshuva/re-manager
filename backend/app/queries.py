@@ -420,7 +420,7 @@ def _dashboard_payload(db, table, where, params, date_from, date_to, *, multi_sc
             text(
                 f"""
                 SELECT month, SUM(gross_rent) AS gross_rent, SUM(operating_expenses) AS operating_expenses,
-                       SUM(noi) AS noi, SUM(cash_flow) AS cash_flow,
+                       SUM(noi) AS noi, SUM(debt_service) AS debt_service, SUM(cash_flow) AS cash_flow,
                        CASE WHEN SUM(total_units) > 0
                             THEN SUM(occupied_units)::numeric / SUM(total_units) ELSE NULL END AS occupancy
                 FROM {table} WHERE {where} AND month <= :t
@@ -432,7 +432,7 @@ def _dashboard_payload(db, table, where, params, date_from, date_to, *, multi_sc
     else:
         trend = db.execute(
             text(
-                "SELECT month, gross_rent, operating_expenses, noi, cash_flow, occupancy "
+                "SELECT month, gross_rent, operating_expenses, noi, debt_service, cash_flow, occupancy "
                 f"FROM {table} WHERE {where} AND month <= :t ORDER BY month DESC LIMIT 12"
             ),
             {**params, "t": date_to},
@@ -447,6 +447,45 @@ def _dashboard_payload(db, table, where, params, date_from, date_to, *, multi_sc
         "prior": prior,
         "trend": [dict(t) for t in reversed(trend)],
     }
+
+
+def property_categories(
+    db: Session, account_id: str, property_id: str, date_from: date | None, date_to: date | None
+) -> list[dict]:
+    """Every category this property posted in the period, with its total and its classification.
+
+    What this answers is "what IS the operating expense figure" — a single number on a
+    dashboard tells an owner that £412 left the building and nothing about whether it was one
+    boiler or twelve small bills, which is the difference between a month to investigate and a
+    month to ignore.
+
+    Read from ``v_line_item_resolved`` rather than from the summary tables, for the same reason
+    the P&L views are: the classification there is the category's CURRENT one, so reclassifying
+    a category moves its spend between sections here with no backfill — the number in this
+    table and the number in the KPI band can never disagree.
+
+    Returns every classification, not just ``operating``. The caller decides what to show; the
+    query is the same work either way, and the below-NOI section needs exactly this breakdown
+    to stop being one opaque figure.
+    """
+    rows = db.execute(
+        text(
+            f"""
+            SELECT category_id::text AS category_id,
+                   category_name     AS category,
+                   classification::text AS classification,
+                   SUM(amount)       AS amount
+            FROM v_line_item_resolved
+            WHERE account_id = :account_id AND property_id = :property_id AND {_range()}
+            GROUP BY category_id, category_name, classification
+            HAVING SUM(amount) <> 0
+            ORDER BY classification, SUM(amount) DESC
+            """
+        ),
+        {"account_id": account_id, "property_id": property_id,
+         "date_from": date_from, "date_to": date_to},
+    ).mappings().all()
+    return [{**r, "amount": float(r["amount"])} for r in rows]
 
 
 def property_dashboard(
@@ -554,7 +593,13 @@ def unit_roster(
                 END AS status,
                 CASE WHEN prev.unit_id IS NOT NULL
                      THEN COALESCE(cur.noi, 0) - prev.noi ELSE NULL END AS noi_change,
-                cl.status AS lease_status, cl.tenant_name AS lease_tenant_name
+                cl.status AS lease_status, cl.tenant_name AS lease_tenant_name,
+                -- The tenancy's own terms, surfaced here so the property page can show (and
+                -- edit) the rent schedule next to the month's actuals instead of sending the
+                -- operator to the rent roll for the three figures they change most.
+                cl.id::text AS lease_id, cl.contract_rent AS lease_contract_rent,
+                cl.start_date AS lease_start, cl.end_date AS lease_end,
+                cl.last_rent_increase_date, cl.rent_before_increase
             FROM units u
             JOIN properties p ON p.id = u.property_id
             LEFT JOIN unit_month_summary cur ON cur.unit_id = u.id AND cur.month = :month
@@ -574,11 +619,27 @@ def unit_roster(
             "offset": offset,
         },
     )
+    out_rows = _rows(rows)
+    today = date.today()
+    for r in out_rows:
+        r["lease_contract_rent"] = (
+            float(r["lease_contract_rent"]) if r["lease_contract_rent"] is not None else None
+        )
+        r["rent_before_increase"] = (
+            float(r["rent_before_increase"]) if r["rent_before_increase"] is not None else None
+        )
+        # Same derivation (and the same fallback to the tenancy's start when the rent has never
+        # been increased) as the rent roll's own column, so the two pages can't disagree about
+        # whether a review is overdue. See `_rent_roll_row`.
+        r["months_since_last_increase"] = (
+            _months_elapsed(r["last_rent_increase_date"] or r["lease_start"], today)
+            if r["lease_id"] is not None else None
+        )
     return {
         "month": month,
         "prior_month": prior,
         "total": total,
-        "rows": _rows(rows),
+        "rows": out_rows,
     }
 
 
@@ -1441,7 +1502,9 @@ _CURRENT_LEASE_CTE = """
             l.id, l.unit_id, l.tenant_name, l.start_date, l.end_date,
             l.contract_rent, l.status,
             l.security_deposit, l.escalation_pct, l.escalation_frequency_months,
-            l.lease_type, l.pct_rent_rate, l.pct_rent_breakpoint, l.concession_monthly
+            l.lease_type, l.pct_rent_rate, l.pct_rent_breakpoint, l.concession_monthly,
+            l.last_rent_increase_date, l.rent_before_increase, l.opening_arrears,
+            l.arrears_from_month
         FROM lease l
         ORDER BY l.unit_id,
             (l.status IN ('active', 'notice')
@@ -1461,6 +1524,18 @@ def _months_to_expiry(end_date: date | None, today: date) -> int | None:
     if end_date.day < today.day:
         months -= 1
     return months
+
+
+def _months_elapsed(since: date | None, today: date) -> int | None:
+    """Whole calendar months from ``since`` to ``today`` — the mirror of
+    :func:`_months_to_expiry`, looking backwards. Used for "months since the rent last went
+    up" on a periodic tenancy (migration 0024). None when there's no date to count from."""
+    if since is None:
+        return None
+    months = (today.year - since.year) * 12 + (today.month - since.month)
+    if today.day < since.day:
+        months -= 1
+    return max(months, 0)
 
 
 def _add_months_preserve_day(d: date, months: int) -> date:
@@ -1557,6 +1632,77 @@ def _escalated_rent(contract_rent, escalation_pct, escalation_frequency_months, 
     return base * ((1 + float(escalation_pct) / 100) ** n_bumps)
 
 
+def _rent_due_for_month(lease: dict, as_of_month: date, *, freeze_at: date | None = None) -> float:
+    """THE rent schedule: what `lease` says is owed for `as_of_month` (a first-of-month
+    date). Every rent-vs-actual surface in this app goes through here — the expected-vs-
+    actual variance, the arrears ledger — so there is exactly one answer to "what was due".
+
+    Three cases, in order:
+
+    1. **No increase on file** (`last_rent_increase_date` IS NULL — every pre-migration-0024
+       lease): unchanged behaviour, `_escalated_rent` anchored on `start_date`.
+    2. **A month BEFORE the last increase**: `rent_before_increase` if we hold it, else
+       `contract_rent`. Priced FLAT — no escalation is back-applied. A periodic tenancy's
+       rent rises in discrete steps (section 13 / by agreement), not on a compounding rate,
+       and inventing a rate behind a step is exactly the phantom-shortfall mistake the
+       lease-coherence fix in app/seed.py removed once already. Falling back to
+       `contract_rent` when the prior figure is unknown is deliberately the pre-0024
+       behaviour: it never makes an existing lease's history worse than it already was.
+    3. **A month ON OR AFTER the last increase**: `contract_rent`, escalated from
+       `last_rent_increase_date` rather than `start_date`. The increase date re-anchors the
+       escalation clock, which is both the right reading of "the rent last actually moved
+       then" and (for England) the right reading of the 12-month rule on further increases.
+
+    `freeze_at` prices the lease as of a DIFFERENT month than the one being reported — used
+    for holdover months, where the schedule freezes at the lease's own `end_date` so a
+    lapsed contract doesn't keep escalating after it's off-term (see `_unit_expected_actual`).
+    """
+    price_month = freeze_at if freeze_at is not None else as_of_month
+    increase = lease.get("last_rent_increase_date")
+    if increase is not None and _month_index(price_month) < _month_index(increase):
+        prior = lease.get("rent_before_increase")
+        return float(prior if prior is not None else lease["contract_rent"])
+    anchor = increase if increase is not None else lease["start_date"]
+    return _escalated_rent(
+        lease["contract_rent"], lease["escalation_pct"],
+        lease["escalation_frequency_months"], anchor, price_month,
+    )
+
+
+def _governing_lease_for_month(
+    ordered_leases: list[dict], month: date, actual: float | None
+) -> tuple[dict | None, bool]:
+    """Which of a unit's leases prices `month`, and whether that's a HOLDOVER.
+
+    Extracted so the expected-vs-actual variance and the arrears ledger can't disagree about
+    whose tenancy a month belongs to — they'd report contradictory shortfalls for the same
+    month if they did. `ordered_leases` must be sorted by `start_date` DESCENDING.
+
+    The lease in force is the one whose [start_date, end_date] covers the month; ties
+    (overlapping leases, not expected in practice) break toward the most-recently-started
+    one, mirroring `_CURRENT_LEASE_CTE`'s own tie-break. Absent one, a HOLDOVER is the unit's
+    most recent lapsed lease when rent is still being collected that month (`actual > 0`) —
+    returned with True, and priced frozen at its own `end_date` by the caller. Otherwise
+    `(None, False)`: a month with no lease basis at all (e.g. before the first lease on file)
+    is not part of any tenancy and is reported by neither surface.
+    """
+    m_idx = _month_index(month)
+    governing = next(
+        (
+            l for l in ordered_leases
+            if _month_index(l["start_date"]) <= m_idx
+            and (l["end_date"] is None or _month_index(l["end_date"]) >= m_idx)
+        ),
+        None,
+    )
+    if governing is not None:
+        return governing, False
+    prev = next((l for l in ordered_leases if _month_index(l["start_date"]) <= m_idx), None)
+    if prev is not None and prev["end_date"] is not None and actual is not None and actual > 0:
+        return prev, True
+    return None, False
+
+
 def _unit_expected_actual(leases: list[dict], actual_by_month: dict[date, float], months: list[date]) -> tuple[float, float]:
     """Sum of expected + actual rent for ONE unit across `months`, given its FULL lease
     history (any order) and its actual gross rent by month (only months on file).
@@ -1590,32 +1736,16 @@ def _unit_expected_actual(leases: list[dict], actual_by_month: dict[date, float]
         if m not in actual_by_month:
             continue
         actual = actual_by_month[m]
-        m_idx = _month_index(m)
-        governing = next(
-            (
-                l for l in ordered
-                if _month_index(l["start_date"]) <= m_idx
-                and (l["end_date"] is None or _month_index(l["end_date"]) >= m_idx)
-            ),
-            None,
+        governing, holdover = _governing_lease_for_month(ordered, m, actual)
+        if governing is None:
+            # Record exists but no lease basis in force (e.g. pre-first-lease months) — not
+            # part of the lease∩actuals intersection, so skip both legs.
+            continue
+        # Holdover freezes the schedule at the lapsed lease's own end_date (migration 0024's
+        # rent-increase handling included — see `_rent_due_for_month`).
+        expected = _rent_due_for_month(
+            governing, m, freeze_at=governing["end_date"] if holdover else None
         )
-        if governing is not None:
-            expected = _escalated_rent(
-                governing["contract_rent"], governing["escalation_pct"],
-                governing["escalation_frequency_months"], governing["start_date"], m,
-            )
-        else:
-            prev = next((l for l in ordered if _month_index(l["start_date"]) <= m_idx), None)
-            if prev is not None and prev["end_date"] is not None and actual > 0:
-                # Holdover: lapsed lease, rent still collected → expected frozen at term end.
-                expected = _escalated_rent(
-                    prev["contract_rent"], prev["escalation_pct"],
-                    prev["escalation_frequency_months"], prev["start_date"], prev["end_date"],
-                )
-            else:
-                # Record exists but no lease basis in force (e.g. pre-first-lease months) —
-                # not part of the lease∩actuals intersection, so skip both legs.
-                continue
         total_expected += expected
         total_actual += actual
     return total_expected, total_actual
@@ -1664,16 +1794,11 @@ def _rent_variance_for_units(
             }
         return result
 
+    # `_LEASE_SCHEDULE_SQL` (see the arrears section) is shared with the arrears engine so
+    # both price from literally the same columns.
     lease_rows = _rows(
         db.execute(
-            text(
-                "SELECT l.unit_id::text AS unit_id, l.start_date, l.end_date, l.contract_rent, "
-                "l.escalation_pct, l.escalation_frequency_months FROM lease l "
-                "JOIN units u ON u.id = l.unit_id "
-                "JOIN properties p ON p.id = u.property_id "
-                "WHERE l.unit_id::text = ANY(:unit_ids) AND p.account_id = :account_id"
-            ),
-            {"unit_ids": unit_ids, "account_id": account_id},
+            text(_LEASE_SCHEDULE_SQL), {"unit_ids": unit_ids, "account_id": account_id}
         )
     )
     actual_rows = _rows(
@@ -1734,6 +1859,467 @@ def _rent_variance_rollup(rows: list[dict]) -> dict:
         "variance_pct": (variance / total_expected * 100) if total_expected else None,
         "unit_count": len(real),
     }
+
+
+# ---- Rent arrears (migration 0025: lease.opening_arrears + arrears_adjustment) ---------
+#
+# Arrears is the CUMULATIVE view of the same shortfall the rent variance above reports for a
+# single period, and the balance a landlord actually chases:
+#
+#     movement(month) = rent_due(month) - rent_collected(month) + adjustments(month)
+#     balance(month)  = opening_arrears + Σ movement over the TENANCY to date
+#
+# DERIVED, never stored (see migration 0025's docstring for the full reasoning). `rent_due`
+# is the lease's own schedule (`_rent_due_for_month` — the same function the variance leg
+# uses, so the two can never disagree); `rent_collected` is `unit_month_summary.gross_rent`,
+# the same actuals source the rent roll already reads. Only two inputs are stored, because
+# only two can't be derived: `lease.opening_arrears` (debt predating this app's records) and
+# `arrears_adjustment` (write-offs and non-rent charges).
+#
+# Three rules that make the number honest, each of which is a decision the obvious
+# implementation gets wrong:
+#
+#   1. PER TENANCY, not per unit. The running sum resets at each lease: an outgoing tenant's
+#      unpaid rent is their debt, so carrying it onto the next tenant of the same door would
+#      both saddle an innocent tenant and lose the real debtor.
+#   2. ONLY MONTHS WITH A RECORD ON FILE (plus any month carrying an adjustment) accrue. A
+#      month with rent due and NO monthly_record is MISSING DATA — we don't know what was
+#      collected — and booking it as arrears would turn every un-entered month into fictional
+#      debt and bury the real cases underneath. This is the same lease∩actuals intersection
+#      `_unit_expected_actual` draws, reused via `_governing_lease_for_month`.
+#   3. NOT FLOORED AT ZERO. A tenant who pays ahead is in CREDIT, and a negative balance says
+#      so. Clamping at zero would silently discard a real prepayment and then double-count
+#      the next month's shortfall against it.
+#
+# Reference data, same invariant as the lease fields it reads: never feeds NOI/cash-flow.
+
+# Shared by the rent-variance and arrears engines so the schedule they price from can't
+# drift apart (they'd otherwise report contradictory shortfalls for the same month).
+_LEASE_SCHEDULE_SQL = """
+    SELECT l.id::text AS lease_id, l.unit_id::text AS unit_id, l.tenant_name,
+           l.start_date, l.end_date, l.contract_rent, l.status,
+           l.escalation_pct, l.escalation_frequency_months, l.concession_monthly,
+           l.last_rent_increase_date, l.rent_before_increase, l.opening_arrears,
+           l.arrears_from_month
+    FROM lease l
+    JOIN units u ON u.id = l.unit_id
+    JOIN properties p ON p.id = u.property_id
+    WHERE l.unit_id::text = ANY(:unit_ids) AND p.account_id = :account_id
+"""
+
+
+def _empty_arrears() -> dict:
+    """The all-zero arrears summary: a unit with no lease on file has no tenancy to owe
+    anything, which is a $0 balance rather than an unknown one. `arrears_months_of_rent`
+    stays None — "how many months' rent is owed" has no meaning with no rent schedule."""
+    return {
+        "arrears_balance": 0.0,
+        "arrears_opening_balance": 0.0,
+        "arrears_movement": 0.0,
+        "arrears_rent_due": 0.0,
+        "arrears_rent_collected": 0.0,
+        "arrears_concessions": 0.0,
+        "arrears_adjustments": 0.0,
+        "arrears_months_of_rent": None,
+    }
+
+
+def _unit_arrears_ledgers(
+    leases: list[dict],
+    actual_by_month: dict[date, float],
+    adjustments: dict[tuple[str, date], float],
+    through_month: date,
+) -> list[dict]:
+    """One unit's arrears ledger, per tenancy, month by month up to `through_month`.
+
+    `leases` is the unit's FULL lease history (any order), `actual_by_month` its
+    `(gross_rent, is_vacant)` by month (only months on file), `adjustments` the signed
+    arrears_adjustment totals keyed by (lease_id, month). Returns one ledger per lease, oldest
+    tenancy first, each with its own running balance starting from that lease's
+    `opening_arrears`.
+
+    Two things are deliberately NOT arrears, because arrears is unpaid rent — not every gap
+    between the schedule and the cash:
+
+      * A **standing CONCESSION** (`lease.concession_monthly`, migration 0016) is rent the
+        landlord agreed not to charge. What's owed is `contract_rent - concession`, so the
+        concession is netted off `rent_due` here (floored at zero) and reported alongside it.
+        Without this every concession-bearing tenant would appear to be in arrears by exactly
+        the discount they were granted, every month, forever. The rent waterfall already draws
+        this same line between `concessions` (a leasing decision) and `bad_debt` (a collections
+        problem) — arrears is the cumulative form of the latter, so it has to draw it too.
+      * A month before the tenancy's **`arrears_from_month`** (migration 0027) is outside the
+        measurement — the handover month after a purchase, where rent apportioned at completion
+        is indistinguishable from a tenant who underpaid. NULL (the default) tracks from the
+        beginning.
+      * An **explicitly VACANT month** (`unit_month_summary.is_vacant`) has no tenant in place
+        to owe anything; that gap is vacancy loss, which the waterfall reports separately.
+        Note this tests the FLAG ONLY and never infers vacancy from £0 collected — a tenant
+        who paid nothing at all is the single most important arrears case there is, and
+        migration 0011 added that flag precisely so "empty" and "nothing came in" could stop
+        being conflated.
+
+    A lease with no eligible months still gets a ledger: a tenancy that began carrying debt
+    still owes it before its first month is entered, so the balance is its opening figure
+    rather than nothing. An adjustment lands on its own lease's month regardless of whether
+    a rent record exists there — a write-off is a fact of the tenancy, not an observation
+    about a month's collections.
+    """
+    ordered = sorted(leases, key=lambda l: _month_index(l["start_date"]), reverse=True)
+    through_idx = _month_index(through_month)
+    entries: dict[str, dict[date, dict]] = {}
+
+    def _entry(lease_id: str, month: date) -> dict:
+        by_month = entries.setdefault(lease_id, {})
+        e = by_month.get(month)
+        if e is None:
+            e = {
+                "month": month, "rent_due": 0.0, "rent_collected": 0.0, "concession": 0.0,
+                "adjustments": 0.0, "has_record": False, "holdover": False,
+            }
+            by_month[month] = e
+        return e
+
+    for month, (actual, is_vacant) in actual_by_month.items():
+        if _month_index(month) > through_idx or is_vacant:
+            # Explicitly vacant: no tenant to owe rent. See the docstring — the flag only,
+            # never a £0-collected inference.
+            continue
+        governing, holdover = _governing_lease_for_month(ordered, month, actual)
+        if governing is None:
+            # No tenancy in force and no holdover: this month belongs to no one's balance.
+            continue
+        # Migration 0027: months before the tenancy's own arrears start are outside the
+        # measurement entirely — a handover month's apportioned rent is not a tenant's debt.
+        start = governing.get("arrears_from_month")
+        if start is not None and _month_index(month) < _month_index(start):
+            continue
+        scheduled = _rent_due_for_month(
+            governing, month, freeze_at=governing["end_date"] if holdover else None
+        )
+        # Rent the landlord agreed not to charge isn't rent the tenant failed to pay.
+        concession = (
+            float(governing["concession_monthly"])
+            if governing["concession_monthly"] is not None else 0.0
+        )
+        concession = min(concession, scheduled)
+        e = _entry(governing["lease_id"], month)
+        e["rent_due"] += scheduled - concession
+        e["concession"] += concession
+        e["rent_collected"] += actual
+        e["has_record"] = True
+        e["holdover"] = holdover
+
+    lease_by_id = {l["lease_id"]: l for l in leases}
+    for (lease_id, month), amount in adjustments.items():
+        if _month_index(month) > through_idx:
+            continue
+        # An adjustment dated into an excluded month would quietly put that month back into the
+        # ledger. A write-off genuinely belonging to the handover period should be dated to the
+        # first tracked month instead, where it is visible.
+        start = lease_by_id.get(lease_id, {}).get("arrears_from_month")
+        if start is not None and _month_index(month) < _month_index(start):
+            continue
+        _entry(lease_id, month)["adjustments"] += amount
+
+    ledgers = []
+    for lease in sorted(leases, key=lambda l: _month_index(l["start_date"])):
+        opening = float(lease["opening_arrears"]) if lease["opening_arrears"] is not None else 0.0
+        balance = opening
+        months: list[dict] = []
+        for month in sorted(entries.get(lease["lease_id"], {})):
+            e = entries[lease["lease_id"]][month]
+            movement = e["rent_due"] - e["rent_collected"] + e["adjustments"]
+            balance += movement
+            months.append({**e, "movement": movement, "balance": balance})
+        ledgers.append({
+            "lease_id": lease["lease_id"],
+            "tenant_name": lease["tenant_name"],
+            "lease_start": lease["start_date"],
+            "lease_end": lease["end_date"],
+            "status": lease["status"],
+            "opening_arrears": opening,
+            "arrears_from_month": lease.get("arrears_from_month"),
+            "months": months,
+            "total_rent_due": sum(m["rent_due"] for m in months),
+            "total_rent_collected": sum(m["rent_collected"] for m in months),
+            "total_concessions": sum(m["concession"] for m in months),
+            "total_adjustments": sum(m["adjustments"] for m in months),
+            "closing_balance": balance,
+        })
+    return ledgers
+
+
+def _arrears_window_summary(ledger: dict, date_from: date, date_to: date) -> dict:
+    """Collapse one tenancy's ledger into the rent roll's figures: the CUMULATIVE balance at
+    `date_to`, plus the window's own movement and the rent due/collected/adjusted behind it.
+
+    `arrears_opening_balance + arrears_movement == arrears_balance` always holds, so the
+    monthly figure and the accumulated one reconcile on the row itself rather than the reader
+    having to take both on trust.
+
+    `arrears_months_of_rent` expresses the balance in months of the CURRENT rent (the last
+    priced month at or before `date_to`) — the figure a letting agent actually quotes, and
+    the one that makes £900 owed comparable between a £450 and an £1,800 door. None when
+    there is no priced month to divide by.
+    """
+    from_idx, to_idx = _month_index(date_from), _month_index(date_to)
+    window = [m for m in ledger["months"] if from_idx <= _month_index(m["month"]) <= to_idx]
+    balance = ledger["closing_balance"]
+    movement = sum(m["movement"] for m in window)
+    priced = [
+        m for m in ledger["months"]
+        if _month_index(m["month"]) <= to_idx and m["rent_due"] > 0
+    ]
+    monthly_rent = priced[-1]["rent_due"] if priced else None
+    return {
+        "arrears_balance": balance,
+        # What the tenancy was already carrying when the window opened.
+        "arrears_opening_balance": balance - movement,
+        "arrears_movement": movement,
+        # NET of any standing concession (see `_unit_arrears_ledgers`) — what was actually
+        # owed, not what the lease's headline rent says.
+        "arrears_rent_due": sum(m["rent_due"] for m in window),
+        "arrears_rent_collected": sum(m["rent_collected"] for m in window),
+        "arrears_concessions": sum(m["concession"] for m in window),
+        "arrears_adjustments": sum(m["adjustments"] for m in window),
+        "arrears_months_of_rent": (balance / monthly_rent) if monthly_rent else None,
+    }
+
+
+def _arrears_inputs(
+    db: Session, account_id: str, unit_ids: list[str], through_month: date
+) -> tuple[
+    dict[str, list[dict]], dict[str, dict[date, float]], dict[str, dict[tuple[str, date], float]]
+]:
+    """Fetch everything the ledger needs for a set of units, in three queries: lease history,
+    collected rent by month, and arrears adjustments.
+
+    Deliberately NOT limited to the reporting window on the actuals/adjustments legs — a
+    cumulative balance is only correct if it has seen the tenancy's whole history up to
+    `through_month`. Only the future is excluded.
+    """
+    leases_by_unit: dict[str, list[dict]] = {}
+    for r in _rows(
+        db.execute(text(_LEASE_SCHEDULE_SQL), {"unit_ids": unit_ids, "account_id": account_id})
+    ):
+        leases_by_unit.setdefault(r["unit_id"], []).append(r)
+
+    actual_by_unit: dict[str, dict[date, float]] = {}
+    for r in _rows(
+        db.execute(
+            text(
+                "SELECT unit_id::text AS unit_id, month, gross_rent, is_vacant "
+                "FROM unit_month_summary "
+                "WHERE unit_id::text = ANY(:unit_ids) AND account_id = :account_id "
+                "AND month <= :through"
+            ),
+            {"unit_ids": unit_ids, "account_id": account_id, "through": through_month},
+        )
+    ):
+        actual_by_unit.setdefault(r["unit_id"], {})[r["month"]] = (
+            float(r["gross_rent"]), bool(r["is_vacant"])
+        )
+
+    adj_by_unit: dict[str, dict[tuple[str, date], float]] = {}
+    for r in _rows(
+        db.execute(
+            text(
+                """
+                SELECT l.unit_id::text AS unit_id, a.lease_id::text AS lease_id,
+                       a.month, a.amount
+                FROM arrears_adjustment a
+                JOIN lease l ON l.id = a.lease_id
+                JOIN units u ON u.id = l.unit_id
+                JOIN properties p ON p.id = u.property_id
+                WHERE l.unit_id::text = ANY(:unit_ids) AND p.account_id = :account_id
+                  AND a.month <= :through
+                """
+            ),
+            {"unit_ids": unit_ids, "account_id": account_id, "through": through_month},
+        )
+    ):
+        key = (r["lease_id"], r["month"])
+        by_key = adj_by_unit.setdefault(r["unit_id"], {})
+        by_key[key] = by_key.get(key, 0.0) + float(r["amount"])
+
+    return leases_by_unit, actual_by_unit, adj_by_unit
+
+
+def _arrears_for_units(
+    db: Session, account_id: str, unit_ids: list[str], date_from: date, date_to: date
+) -> dict[str, dict[str, dict]]:
+    """Arrears summary per (unit, lease) over [date_from, date_to], for merging into rent-roll
+    rows. Keyed unit -> lease so the caller can pick the tenancy its row is actually showing
+    (the CURRENT lease, per `_CURRENT_LEASE_CTE`) rather than this function re-deriving that
+    choice and risking disagreement with it."""
+    if not unit_ids:
+        return {}
+    leases_by_unit, actual_by_unit, adj_by_unit = _arrears_inputs(
+        db, account_id, unit_ids, date_to
+    )
+    out: dict[str, dict[str, dict]] = {}
+    for unit_id, leases in leases_by_unit.items():
+        ledgers = _unit_arrears_ledgers(
+            leases, actual_by_unit.get(unit_id, {}), adj_by_unit.get(unit_id, {}), date_to
+        )
+        out[unit_id] = {
+            ledger["lease_id"]: _arrears_window_summary(ledger, date_from, date_to)
+            for ledger in ledgers
+        }
+    return out
+
+
+def _arrears_rollup(rows: list[dict]) -> dict:
+    """Property/portfolio arrears rollup. Excludes shell/synthetic units for the same reason
+    `_rent_variance_rollup` does (their rent books at the property tier, so they have no
+    tenancy of their own to owe anything).
+
+    `units_in_arrears` counts only units actually OWING at `period_to`; units in credit are
+    kept out of that count but DO net against `total_balance`. The portfolio's real exposure
+    is the net position, while "how many doors do I have to chase" is a headcount of debtors —
+    reporting one number for both questions is what makes an arrears report useless.
+    """
+    real = [r for r in rows if not r.get("is_shell") and r.get("arrears_balance") is not None]
+    balances = [r["arrears_balance"] for r in real]
+    return {
+        "total_balance": sum(balances),
+        "total_movement": sum(r["arrears_movement"] for r in real),
+        "total_rent_due": sum(r["arrears_rent_due"] for r in real),
+        "total_rent_collected": sum(r["arrears_rent_collected"] for r in real),
+        "total_concessions": sum(r["arrears_concessions"] for r in real),
+        "total_adjustments": sum(r["arrears_adjustments"] for r in real),
+        "units_in_arrears": sum(1 for b in balances if b > 0),
+        "units_in_credit": sum(1 for b in balances if b < 0),
+        "unit_count": len(real),
+        "largest_balance": max(balances) if balances else None,
+    }
+
+
+def unit_arrears(db: Session, account_id: str, unit_id: str) -> dict:
+    """The full month-by-month arrears ledger for one unit, one block per tenancy — the
+    "monthly basis" view behind the rent roll's accumulated balance.
+
+    Every tenancy the unit has ever had is returned (oldest first), each with its own running
+    balance, because a prior tenant's unpaid rent doesn't disappear just because they left —
+    it stops being collectable from the CURRENT tenant, which is a different statement.
+    `current_balance` is the balance of the lease the rent roll calls current, so the two
+    surfaces always agree.
+    """
+    through = current_month()
+    leases_by_unit, actual_by_unit, adj_by_unit = _arrears_inputs(
+        db, account_id, [unit_id], through
+    )
+    leases = leases_by_unit.get(unit_id, [])
+    ledgers = _unit_arrears_ledgers(
+        leases, actual_by_unit.get(unit_id, {}), adj_by_unit.get(unit_id, {}), through
+    )
+    # Same current-lease rule as `_CURRENT_LEASE_CTE`: a lease covering today wins, otherwise
+    # the most recently started one. Re-stated here rather than re-queried so a unit with no
+    # summarized months still reports its current tenancy's opening balance.
+    today = date.today()
+    by_recency = sorted(leases, key=lambda l: _month_index(l["start_date"]), reverse=True)
+    current = next(
+        (
+            l for l in by_recency
+            if l["status"] in ("active", "notice")
+            and l["start_date"] <= today
+            and (l["end_date"] is None or l["end_date"] >= today)
+        ),
+        None,
+    ) or (by_recency[0] if by_recency else None)
+    current_id = current["lease_id"] if current else None
+    return {
+        "unit_id": unit_id,
+        "as_of": through,
+        "current_lease_id": current_id,
+        "current_balance": next(
+            (l["closing_balance"] for l in ledgers if l["lease_id"] == current_id), 0.0
+        ),
+        "leases": ledgers,
+    }
+
+
+def arrears_by_month(
+    db: Session,
+    account_id: str,
+    date_from: date,
+    date_to: date,
+    tags: list[str] | None = None,
+    property_id: str | None = None,
+) -> tuple[dict[date, list[dict]], dict[str, dict]]:
+    """Per-unit arrears positions for the attention feed: `(by_month, final_positions)`.
+
+    Computed ONCE per feed request over the whole period and indexed, rather than per month: a
+    cumulative balance has to walk each tenancy's full history to be correct, so a detector
+    that recomputed it inside the feed's month loop would redo that walk for every month in a
+    YTD or trailing-12 window. Each entry carries the running `balance` at that month and the
+    `movement` into it, plus the identity the feed needs to label an item.
+
+    `by_month` holds only entries INSIDE [date_from, date_to]. `final_positions` holds every
+    tenancy's LAST entry at or before `date_to`, in or out of the window, because a cumulative
+    balance must not disappear just because the requested window happens to contain no unit
+    records — which is exactly what the default single-month feed hits whenever
+    `property_month_summary` runs past `unit_month_summary` (a shared expense posted forward,
+    say). £5,000 outstanding is still outstanding in a month nobody has entered yet; the
+    detector falls back to this so it reports the standing debt, dated to the month it last
+    moved rather than to an empty month.
+    """
+    scope = "p.account_id = :account_id"
+    params: dict = {"account_id": account_id}
+    if property_id is not None:
+        scope += " AND u.property_id = :pid"
+        params["pid"] = property_id
+    else:
+        scope += f" AND {_tag_where('p.id')}"
+        params["tags"] = tags
+    units = _rows(
+        db.execute(
+            text(
+                f"""
+                SELECT u.id::text AS unit_id, u.unit_number,
+                       p.id::text AS property_id, p.name AS property_name
+                FROM units u JOIN properties p ON p.id = u.property_id
+                WHERE {scope} AND NOT u.is_shell
+                """
+            ),
+            params,
+        )
+    )
+    if not units:
+        return {}, {}
+    unit_ids = [u["unit_id"] for u in units]
+    identity = {u["unit_id"]: u for u in units}
+    leases_by_unit, actual_by_unit, adj_by_unit = _arrears_inputs(
+        db, account_id, unit_ids, date_to
+    )
+
+    from_idx, to_idx = _month_index(date_from), _month_index(date_to)
+    by_month: dict[date, list[dict]] = {}
+    final: dict[str, dict] = {}
+    for unit_id, leases in leases_by_unit.items():
+        ledgers = _unit_arrears_ledgers(
+            leases, actual_by_unit.get(unit_id, {}), adj_by_unit.get(unit_id, {}), date_to
+        )
+        for ledger in ledgers:
+            for m in ledger["months"]:
+                entry = {
+                    **identity[unit_id],
+                    "lease_id": ledger["lease_id"],
+                    "tenant_name": ledger["tenant_name"],
+                    "month": m["month"],
+                    "balance": m["balance"],
+                    "movement": m["movement"],
+                    "rent_due": m["rent_due"],
+                    "rent_collected": m["rent_collected"],
+                }
+                if from_idx <= _month_index(m["month"]) <= to_idx:
+                    by_month.setdefault(m["month"], []).append(entry)
+                # `months` is month-ordered and the ledgers are tenancy-ordered, so the last
+                # write wins and `final` ends up holding the unit's most recent position
+                # across its whole lease history.
+                final[unit_id] = entry
+    return by_month, final
 
 
 def _rent_roll_row(row: dict, today: date) -> dict:
@@ -1799,8 +2385,14 @@ def _rent_roll_row(row: dict, today: date) -> dict:
         "security_deposit": float(row["security_deposit"]) if row["security_deposit"] is not None else None,
         "escalation_pct": float(row["escalation_pct"]) if row["escalation_pct"] is not None else None,
         "escalation_frequency_months": row["escalation_frequency_months"] if has_lease else None,
+        # Anchored on the last ACTUAL rent increase when there is one (migration 0024),
+        # else on lease_start as before: once the rent has moved, the next scheduled bump is
+        # a cadence from THAT date, not from a start date the schedule has already left
+        # behind. Same anchor `_rent_due_for_month` prices from, so the date shown and the
+        # rent charged can't disagree.
         "next_escalation_date": _next_escalation_date(
-            row["lease_start"], row["escalation_frequency_months"], row["escalation_pct"], today, lease_end
+            row["last_rent_increase_date"] or row["lease_start"],
+            row["escalation_frequency_months"], row["escalation_pct"], today, lease_end
         ),
         "lease_type": row["lease_type"] if has_lease else None,
         "holdover": holdover,
@@ -1817,6 +2409,29 @@ def _rent_roll_row(row: dict, today: date) -> dict:
         "concession_monthly": (
             float(row["concession_monthly"]) if row["concession_monthly"] is not None else None
         ),
+        # Periodic-tenancy rent history (migration 0024). `last_rent_increase_date` is when
+        # the current `contract_rent` took effect and `rent_before_increase` what it replaced
+        # (null = not held). `months_since_last_increase` is the operational read on an
+        # England-style rolling tenancy — rises are typically annual and no sooner, so "14
+        # months since the last one" is the review that's overdue; it counts from
+        # `lease_start` when the rent has never been increased, which is the same question
+        # asked of a tenancy still on its original rent.
+        "last_rent_increase_date": row["last_rent_increase_date"],
+        "rent_before_increase": (
+            float(row["rent_before_increase"]) if row["rent_before_increase"] is not None else None
+        ),
+        # Surfaced for the same reason `concession_monthly` is: the rent-roll's lease editor
+        # saves through a FULL-REPLACE PATCH, so a field it can't read back is a field any
+        # unrelated edit silently erases. This is the stored half of the arrears balance below
+        # (`arrears_balance` includes it), not a second copy of it.
+        "opening_arrears": (
+            float(row["opening_arrears"]) if row["opening_arrears"] is not None else None
+        ),
+        "arrears_from_month": row["arrears_from_month"],
+        "months_since_last_increase": (
+            _months_elapsed(row["last_rent_increase_date"] or row["lease_start"], today)
+            if has_lease else None
+        ),
         # Filled in by property_rent_roll/portfolio_rent_roll (needs the whole unit list +
         # the resolved period first) via `_rent_variance_for_units`. Left as None here so
         # the dict shape is complete even if that merge step is ever skipped.
@@ -1824,6 +2439,11 @@ def _rent_roll_row(row: dict, today: date) -> dict:
         "period_actual_rent": None,
         "variance": None,
         "variance_pct": None,
+        # Arrears (migration 0025), likewise merged in later by `_apply_arrears`. Zeros, not
+        # nulls, are the right default for a unit with no lease on file: no tenancy means
+        # nothing owed — a fact, not a gap. (A SHELL unit is the exception and is nulled back
+        # out by `_apply_arrears`, having no tenancy of its own at all.)
+        **_empty_arrears(),
     }
 
 
@@ -1962,6 +2582,8 @@ def _rent_roll_sql(where: str) -> str:
             cl.end_date AS lease_end, cl.contract_rent, cl.status AS lease_status,
             cl.security_deposit, cl.escalation_pct, cl.escalation_frequency_months,
             cl.lease_type, cl.pct_rent_rate, cl.pct_rent_breakpoint, cl.concession_monthly,
+            cl.last_rent_increase_date, cl.rent_before_increase, cl.opening_arrears,
+            cl.arrears_from_month,
             lm.month AS actual_month, ums.gross_rent AS actual_rent
         FROM units u
         JOIN properties p ON p.id = u.property_id
@@ -2002,6 +2624,41 @@ def _apply_rent_variance(
     return period_from, period_to, _rent_variance_rollup(out_rows)
 
 
+def _apply_arrears(
+    db: Session, account_id: str, out_rows: list[dict], period_from: date | None,
+    period_to: date | None,
+) -> dict:
+    """Merge each row's arrears figures in place and return the rollup (migration 0025).
+
+    Runs AFTER `_apply_rent_variance` and reuses the window it resolved, so the monthly
+    movement shown next to the variance covers exactly the same months — a reader comparing
+    the two columns is comparing like with like, and `arrears_movement` is the variance's own
+    shortfall with the adjustments added and the sign flipped to "owed".
+
+    Each row takes the summary for the tenancy IT is showing (`lease_id`), not the unit's
+    worst or latest: the rent roll's row is the current tenancy, so its balance must be that
+    tenancy's. A row whose current lease has no ledger keeps the zeros from `_rent_roll_row`.
+    """
+    if period_to is None:
+        # No summarized month anywhere in scope: nothing has been collected or missed yet, so
+        # every row keeps its zeros and the rollup is empty rather than fabricated.
+        return _arrears_rollup([])
+    by_unit = _arrears_for_units(
+        db, account_id, [r["unit_id"] for r in out_rows], period_from, period_to
+    )
+    for row in out_rows:
+        if row.get("is_shell"):
+            # Same exclusion, same reason, as the variance merge: a shell unit's rent books at
+            # the property tier, so it has no tenancy of its own and no balance to report.
+            # Nulled (not zeroed) so the UI renders "—" rather than a confident £0.
+            row.update({k: None for k in _empty_arrears()})
+            continue
+        summary = by_unit.get(row["unit_id"], {}).get(row.get("lease_id"))
+        if summary is not None:
+            row.update(summary)
+    return _arrears_rollup(out_rows)
+
+
 def property_rent_roll(
     db: Session,
     account_id: str,
@@ -2021,9 +2678,11 @@ def property_rent_roll(
     period_from, period_to, rent_variance = _apply_rent_variance(
         db, account_id, out_rows, scope_where, params, date_from, date_to
     )
+    arrears = _apply_arrears(db, account_id, out_rows, period_from, period_to)
     return {
         "property_id": property_id, "as_of": today, "rows": out_rows, "occupancy": _occupancy_summary(out_rows),
         "period_from": period_from, "period_to": period_to, "rent_variance": rent_variance,
+        "arrears": arrears,
     }
 
 
@@ -2046,9 +2705,11 @@ def portfolio_rent_roll(
     period_from, period_to, rent_variance = _apply_rent_variance(
         db, account_id, out_rows, scope_where, params, date_from, date_to
     )
+    arrears = _apply_arrears(db, account_id, out_rows, period_from, period_to)
     return {
         "property_id": None, "as_of": today, "rows": out_rows, "occupancy": _occupancy_summary(out_rows),
         "period_from": period_from, "period_to": period_to, "rent_variance": rent_variance,
+        "arrears": arrears,
     }
 
 
@@ -2345,8 +3006,8 @@ def _rent_waterfall_for_units(
 def _single_asset_property_components(
     db: Session, account_id: str, prop_where: str, params: dict, date_from: date, date_to: date
 ) -> list[dict]:
-    """Single-asset properties (`properties.type = 'single'` — Cedar Plaza Retail + the
-    house properties) have no units: they book rent directly at the property tier, and
+    """Single-asset properties with NO REAL UNIT of their own: they book rent directly at the
+    property tier, and
     `PropertyMonthSummary.gross_rent` for them already IS the property's total rent (that
     model aggregates unit rows AND the property-tier row — see its docstring — but a
     single-asset property has only the latter). Rework item 3: without folding these in,
@@ -2371,6 +3032,20 @@ def _single_asset_property_components(
         LEFT JOIN property_month_summary pms
                ON pms.property_id = p.id AND pms.month BETWEEN :f AND :t
         WHERE p.type = 'single' AND p.account_id = :account_id AND {prop_where}
+          -- ...and ONLY while it has no real unit to speak for it.
+          --
+          -- This pass-through leg exists because a unitless property's rent is invisible to
+          -- every unit-level aggregate. The moment such a property HAS a unit (a single-let
+          -- house given its one dwelling, so it can hold a tenancy), the unit path already
+          -- counts its rent — and counting it here as well listed every property twice in the
+          -- per-property breakdown AND double-counted GPR and actual_collected in the portfolio
+          -- totals. The unit path is also strictly better: it has a lease basis, so it can
+          -- decompose loss-to-lease, voids and arrears, which this leg deliberately cannot.
+          -- Shell units don't count (they're excluded from every unit-level aggregate by
+          -- design), so a property carrying only a shell still needs this leg.
+          AND NOT EXISTS (
+              SELECT 1 FROM units u WHERE u.property_id = p.id AND NOT u.is_shell
+          )
         GROUP BY p.id, p.name
     """
     rows = _rows(

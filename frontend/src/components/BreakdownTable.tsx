@@ -3,7 +3,19 @@ import type { PnLMetrics, PortfolioBreakdown, PropertyBreakdown } from "../api";
 import { clickableProps } from "../hooks/clickable";
 import { fmtCurrency } from "../ui";
 
-const cells = (m: PnLMetrics) => [m.gross_rent, m.operating_expenses, m.noi, m.below_noi, m.cash_flow];
+// Below-NOI was one column mixing a mortgage, a roof and everything else — three different
+// decisions for whoever has to act on them. Split, the row still reads as the P&L does:
+// NOI − debt service − capex − other = cash flow.
+const cells = (m: PnLMetrics) => [
+  m.gross_rent,
+  m.operating_expenses,
+  m.noi,
+  m.debt_service,
+  m.capex,
+  m.other_below_line,
+  m.cash_flow,
+];
+const CASH_FLOW_COL = 6;
 
 // Portfolio → property → unit breakdown for the selected period. Property rows are
 // clickable (multifamily) to reveal each unit plus the property-tier-only items that are
@@ -21,7 +33,9 @@ export default function BreakdownTable({ data }: { data: PortfolioBreakdown }) {
           <th>Gross Rent</th>
           <th>Operating</th>
           <th>NOI</th>
-          <th>Below-NOI</th>
+          <th>Debt Service</th>
+          <th>Capex</th>
+          <th>Other</th>
           <th>Cash Flow</th>
         </tr>
       </thead>
@@ -32,7 +46,7 @@ export default function BreakdownTable({ data }: { data: PortfolioBreakdown }) {
         <tr className="row-total">
           <td>Portfolio total</td>
           {cells(data.total).map((v, i) => (
-            <td key={i} className={i === 4 && v < 0 ? "value-negative" : undefined}>
+            <td key={i} className={i === CASH_FLOW_COL && v < 0 ? "value-negative" : undefined}>
               {fmtCurrency(v)}
             </td>
           ))}
@@ -48,7 +62,7 @@ function PropertyRows({ p, open, onToggle }: { p: PropertyBreakdown; open: boole
     <tr className={rowClass}>
       <td>{label}</td>
       {cells(m).map((v, i) => (
-        <td key={i} className={i === 4 && v < 0 ? "value-negative" : undefined}>
+        <td key={i} className={i === CASH_FLOW_COL && v < 0 ? "value-negative" : undefined}>
           {fmtCurrency(v)}
         </td>
       ))}
@@ -67,7 +81,7 @@ function PropertyRows({ p, open, onToggle }: { p: PropertyBreakdown; open: boole
           <span className="muted" style={{ fontWeight: 400 }}> ({p.type})</span>
         </td>
         {cells(p).map((v, i) => (
-          <td key={i} className={i === 4 && v < 0 ? "value-negative" : undefined}>
+          <td key={i} className={i === CASH_FLOW_COL && v < 0 ? "value-negative" : undefined}>
             {fmtCurrency(v)}
           </td>
         ))}

@@ -50,6 +50,23 @@ class Settings(BaseSettings):
     # regardless of month-over-month change — a persistently very-empty property is a standing
     # problem even in a month where it didn't get worse.
     attention_vacancy_high_absolute_pct: float = 20.0
+    # Arrears (migration 0025): flag a tenancy whose CUMULATIVE balance is at least this many
+    # pounds/dollars, OR at least this many months of its own rent. OR, not AND, and
+    # deliberately unlike every threshold above it: the other detectors are CHANGE detectors
+    # that need a materiality gate in both dimensions to stay quiet, whereas either of these
+    # conditions alone is already a tenancy worth chasing — £1,200 owed matters whatever the
+    # rent, and a tenant a full month down matters even on a £450 room. Global, not
+    # per-account (no attention_settings column): same treatment as the reconcile ratio below,
+    # and promotable to per-account later without touching the detector.
+    attention_arrears_min_balance: float = 500.0
+    attention_arrears_min_months: float = 1.0
+    # How many individual debtors the feed names before collapsing the tail. Arrears is a
+    # STANDING balance, so unlike the change detectors it qualifies every month it goes unpaid
+    # and a portfolio with a long tail of small debts would otherwise fill all 50 feed slots
+    # with arrears and bury the NOI drops and vacancies entirely. The worst N are named; the
+    # remainder become one row per property ("N units in arrears, £X total"), which is also
+    # the more actionable shape for a tail of small balances.
+    attention_arrears_max_items: int = 10
     # Root-cause linking: merge a property-month's NOI drop INTO its expense spike when the
     # prior-month operating-expense increase accounts for >= this share of the NOI decline
     # (magnitude reconciliation — near-equality is the evidence they're the same event).

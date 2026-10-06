@@ -41,13 +41,30 @@ assert abs(cur["noi"] - pm["noi"]) < 1e-6 and abs(cur["gross_rent"] - pm["gross_
 print("   scoped KPI band reconciles with /properties/:id/monthly ✓")
 
 print("\n2) PROPERTY-SCOPED FEED ---------------------------------------------")
-# Cedar Commons: exactly one item — the property-tier Repairs & Maintenance spike.
-cedar = get(f"/properties/{pid['Cedar Commons']}/attention?from={M}&to={M}")["items"]
-print(f"   Cedar Commons: {len(cedar)} item(s) -> {[(i['type'], i['category'], i['unit_number']) for i in cedar]}")
+
+
+def change_items(items: list[dict]) -> list[dict]:
+    """Everything except `arrears` (migration 0025). The planted anomalies this section is the
+    answer key for are CHANGE events — something moved versus the prior month. Arrears is a
+    LEVEL: the seed's delinquent units are in arrears in every month of the window by design,
+    so they are correctly present in each of these feeds and would break an exact count of a
+    different thing. See verify_phase15.py for the arrears answer key itself."""
+    return [i for i in items if i["type"] != "arrears"]
+
+
+# Cedar Commons: exactly one CHANGE item — the property-tier Repairs & Maintenance spike.
+cedar_all = get(f"/properties/{pid['Cedar Commons']}/attention?from={M}&to={M}")["items"]
+cedar = change_items(cedar_all)
+print(f"   Cedar Commons: {len(cedar)} change item(s) -> {[(i['type'], i['category'], i['unit_number']) for i in cedar]}")
 assert len(cedar) == 1, cedar
 assert cedar[0]["type"] == "expense_spike" and cedar[0]["category"] == "Repairs & Maintenance"
 assert cedar[0]["unit_id"] is None  # property/tier-scoped, not a unit
 assert 29_000 <= cedar[0]["change"] <= 30_000
+# ...and the property-scoped feed carries arrears too, at unit grain (the operator shouldn't
+# have to go back to the portfolio view to see who owes money in the building they opened).
+cedar_arrears = [i for i in cedar_all if i["type"] == "arrears" and not i["rolled_up"]]
+assert cedar_arrears and all(i["unit_number"] and i["magnitude"] > 0 for i in cedar_arrears)
+print(f"   Cedar Commons: {len(cedar_arrears)} unit(s) in arrears alongside it ✓")
 
 # Maple Court: ONE item for the whole move-out event. Two root-cause links collapse what
 # used to be three separate rows (unit vacancy + unit NOI drop + property occupancy drop):
@@ -55,8 +72,8 @@ assert 29_000 <= cedar[0]["change"] <= 30_000
 #                                            so it folds into the vacancy (NOI in detail);
 #   `_fold_vacancies_into_occupancy_drops` — the surviving vacancy folds into the
 #                                            property-level occupancy drop that explains it.
-maple = get(f"/properties/{pid['Maple Court Apartments']}/attention?from={M}&to={M}")["items"]
-print(f"   Maple Court:   {len(maple)} item(s) -> {[(i['type'], i['unit_number']) for i in maple]}")
+maple = change_items(get(f"/properties/{pid['Maple Court Apartments']}/attention?from={M}&to={M}")["items"])
+print(f"   Maple Court:   {len(maple)} change item(s) -> {[(i['type'], i['unit_number']) for i in maple]}")
 assert len(maple) == 1, maple
 item = maple[0]
 assert item["type"] == "occupancy_drop", item
@@ -69,18 +86,19 @@ assert abs(item["magnitude"] - 1500) < 1, item["magnitude"]
 # cluster of near-identical per-unit items into ONE rolled-up row rather than flooding the
 # feed with 62 duplicates. This assertion used to expect the 62 individual items, from
 # before the roll-up existed.
-oak = get(f"/properties/{pid['Oak Ridge Residences']}/attention?from={M}&to={M}")["items"]
+oak = change_items(get(f"/properties/{pid['Oak Ridge Residences']}/attention?from={M}&to={M}")["items"])
 types = {i["type"] for i in oak}
-print(f"   Oak Ridge:     {len(oak)} item(s); types={types}")
+print(f"   Oak Ridge:     {len(oak)} change item(s); types={types}")
 assert len(oak) == 1, oak
 assert types == {"noi_drop"}
 rolled = oak[0]
 assert rolled.get("rolled_up") is True, rolled
 assert rolled["count"] == 62, rolled["count"]
 
-# A non-anomaly property is quiet.
-pine = get(f"/properties/{pid['Pine Valley Tower']}/attention?from={M}&to={M}")["items"]
-print(f"   Pine Valley:   {len(pine)} item(s) (expected 0)")
+# A non-anomaly property is quiet of change events (it may still carry standing arrears —
+# a tenant owing money is not an anomaly of the month, which is the whole distinction here).
+pine = change_items(get(f"/properties/{pid['Pine Valley Tower']}/attention?from={M}&to={M}")["items"])
+print(f"   Pine Valley:   {len(pine)} change item(s) (expected 0)")
 assert len(pine) == 0
 print("   property-scoped feeds match the answer key ✓")
 

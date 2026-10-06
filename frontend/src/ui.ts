@@ -9,11 +9,22 @@ import type { CSSProperties } from "react";
 // GBP → £; the locale switches with it so grouping/placement read natively.
 type CurrencyCode = "USD" | "GBP";
 const CURRENCY_LOCALE: Record<CurrencyCode, string> = { USD: "en-US", GBP: "en-GB" };
+const CURRENCY_SYMBOL: Record<CurrencyCode, string> = { USD: "$", GBP: "£" };
 let activeCurrency: CurrencyCode = "USD";
 
 export const setActiveCurrency = (code: string) => {
   activeCurrency = code === "GBP" ? "GBP" : "USD";
 };
+
+// The account's currency is also what tells us which country's conventions to use — for dates
+// below, and for the UK/US vocabulary in `terms.ts`. There is no separate region setting and
+// there doesn't need to be: an account keeping its books in £ is letting property in Britain.
+export const activeLocale = () => CURRENCY_LOCALE[activeCurrency];
+export const isUK = () => activeCurrency === "GBP";
+
+// The bare symbol, for labels that name a unit rather than format a figure ("Discount (£/mo)").
+// Anything that formats an actual amount should use `fmtCurrency`, not this.
+export const currencySymbol = () => CURRENCY_SYMBOL[activeCurrency];
 
 export const fmtCurrency = (n: number) =>
   n.toLocaleString(CURRENCY_LOCALE[activeCurrency], {
@@ -22,12 +33,17 @@ export const fmtCurrency = (n: number) =>
     maximumFractionDigits: 0,
   });
 
+// Dates follow the account's locale for the same reason money does. This is NOT cosmetic:
+// en-US renders 2026-09-08 as "9/8/2026" and en-GB as "08/09/2026" — day-first versus
+// month-first, the same ten characters meaning two different days. A UK landlord reading a
+// US-formatted tenancy start date or certificate expiry is being actively misinformed, and
+// their own agent statements are day-first (see app/parsing.py), so the app has to match.
 export const fmtMonth = (iso: string) =>
-  new Date(iso + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "short" });
+  new Date(iso + "T00:00:00").toLocaleDateString(activeLocale(), { year: "numeric", month: "short" });
 
 // Full local date + time for timestamped rows (e.g. audit log entries).
 export const fmtDateTime = (iso: string) =>
-  new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+  new Date(iso).toLocaleString(activeLocale(), { dateStyle: "medium", timeStyle: "short" });
 
 // A fraction (0.062) as a percent ("6.2%"). For rates like cap rate / cash-on-cash.
 export const fmtPct = (frac: number, digits = 1) => `${(frac * 100).toFixed(digits)}%`;
@@ -44,8 +60,12 @@ export const statusPillClass = (status: string) =>
 export const leaseStatusPillClass = (status: string) =>
   `pill pill--${status === "active" ? "occupied" : status === "notice" ? "missing" : "vacant"}`;
 
+// "25 Aug 2026" under en-GB, "Aug 25, 2026" under en-US — day-first where it should be, and
+// never the ambiguous all-numeric form in either locale.
 export const fmtDate = (iso: string) =>
-  new Date(iso + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  new Date(iso + "T00:00:00").toLocaleDateString(activeLocale(), {
+    year: "numeric", month: "short", day: "numeric",
+  });
 
 // Compliance certificate status pill class: "valid" (green) | "expiring" (amber — within the
 // alert window, renew now) | "expired" (red). Reuses the roster pill colors.
@@ -60,9 +80,9 @@ export const fmtDaysToExpiry = (days: number) => {
 };
 
 // "N mo" for a positive/zero months-to-expiry, "expired" for a negative one (a lapsed,
-// still-occupied holdover lease — e.g. status "expired" — rather than a bare confusing
-// negative number), "—" when there's no term to report at all (month-to-month, or the
-// unit is vacant so months_to_expiry is null).
+// still-occupied holdover tenancy — e.g. status "expired" — rather than a bare confusing
+// negative number), "—" when there's no term to report at all (a periodic/rolling tenancy
+// has no end date, or the unit is empty so months_to_expiry is null).
 export const fmtMonthsToExpiry = (months: number | null) => {
   if (months == null) return "—";
   if (months < 0) return "expired";
@@ -136,6 +156,8 @@ export const CHART = {
   cashFlow: "#15803d",
   rent: "#2563eb",
   opex: "#f0631e",
+  debtService: "#7c3aed",
+  capex: "#b45309",
   grid: "#eef1f5",
   axis: "#8a95a8",
 };

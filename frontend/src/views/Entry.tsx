@@ -18,7 +18,8 @@ import {
   type Property,
   type Unit,
 } from "../api";
-import { fmtCurrency } from "../ui";
+import { t } from "../terms";
+import { currencySymbol, fmtCurrency } from "../ui";
 import PropertySearchSelect from "../components/PropertySearchSelect";
 import SharedExpenses from "../components/SharedExpenses";
 
@@ -258,9 +259,9 @@ export default function Entry({ token }: { token: string }) {
                 disabled={locked}
                 onChange={(e) => setIsVacant(e.target.checked)}
               />
-              Mark this unit as vacant this month
+              {`Mark this unit as ${t("vacant")} this month`}
               <span className="muted" style={{ fontSize: 12 }}>
-                (explicit — distinct from simply not posting a record; $0 rent either way)
+                {`(explicit — distinct from simply not posting a record; ${currencySymbol()}0 rent either way)`}
               </span>
             </label>
           )}

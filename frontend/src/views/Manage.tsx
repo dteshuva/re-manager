@@ -438,9 +438,16 @@ function PropertyCard({
   const [open, setOpen] = useState(false);
   const [unitNum, setUnitNum] = useState("");
 
+  // A single-let property gets a units section too, capped at one (see the API's own rule in
+  // app/routers/properties.py). It isn't bookkeeping pedantry: a tenancy hangs off a unit, so
+  // without that one unit a house can never hold a rent schedule or an arrears balance — and
+  // this screen was the only place to create one.
+  const isSingle = property.type !== "multifamily";
+  const atUnitCap = isSingle && units.length >= 1;
+
   const loadUnits = () => listUnits(token, property.id).then(setUnits).catch((e) => onError(e.message));
   useEffect(() => {
-    if (open && property.type === "multifamily") loadUnits();
+    if (open) loadUnits();
   }, [open]);
 
   return (
@@ -453,11 +460,9 @@ function PropertyCard({
           </span>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {property.type === "multifamily" && (
-            <button style={btn} onClick={() => setOpen((o) => !o)}>
-              {open ? "Hide units" : "Units"}
-            </button>
-          )}
+          <button style={btn} onClick={() => setOpen((o) => !o)}>
+            {open ? "Hide units" : isSingle ? "Unit" : "Units"}
+          </button>
           <button style={btn} onClick={() => confirm(`Delete ${property.name}? This removes its records.`) && onDelete()}>
             Delete
           </button>
@@ -466,7 +471,7 @@ function PropertyCard({
 
       <PropertyTags token={token} propertyId={property.id} isAdmin={isAdmin} onError={onError} />
 
-      {open && property.type === "multifamily" && (
+      {open && (
         <div style={{ marginTop: 10, paddingLeft: 12, borderLeft: "3px solid #eee" }}>
           {units.map((u) => (
             <div key={u.id} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
@@ -485,8 +490,17 @@ function PropertyCard({
               </button>
             </div>
           ))}
+          {isSingle && (
+            <p className="hint" style={{ margin: "4px 0" }}>
+              {atUnitCap
+                ? "A single-let property holds one unit — its own dwelling. That unit is where the " +
+                  "tenancy, rent schedule and arrears live; edit them on the Property or Rent Roll tab."
+                : "Add one unit (call it “1”) so this house can hold a tenancy — without it there's " +
+                  "nowhere for the rent schedule or arrears balance to live."}
+            </p>
+          )}
           <form
-            style={{ display: "flex", gap: 8, marginTop: 6 }}
+            style={{ display: atUnitCap ? "none" : "flex", gap: 8, marginTop: 6 }}
             onSubmit={(e) => {
               e.preventDefault();
               if (!unitNum.trim()) return;
@@ -498,7 +512,12 @@ function PropertyCard({
                 .catch((e) => onError(e.message));
             }}
           >
-            <input style={input} placeholder="Unit number" value={unitNum} onChange={(e) => setUnitNum(e.target.value)} />
+            <input
+              style={input}
+              placeholder={isSingle ? "Unit number (e.g. 1)" : "Unit number"}
+              value={unitNum}
+              onChange={(e) => setUnitNum(e.target.value)}
+            />
             <button style={btn} type="submit">
               Add unit
             </button>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getUnitDetail, type UnitDetail as UnitDetailData } from "../api";
 import PnlTrendChart from "./PnlTrendChart";
+import { t } from "../terms";
 import { fmtCurrency, fmtMonth, leaseStatusPillClass, statusPillClass } from "../ui";
 
 // Level 3 — Unit detail, drilled into from the property's unit roster or attention feed.
@@ -40,8 +41,12 @@ export default function UnitDetail({
             {d.status}
           </span>
           {d.lease_status && (
-            <span className={leaseStatusPillClass(d.lease_status)} style={{ marginLeft: 6 }} title="Current lease state (today)">
-              lease: {d.lease_status}
+            <span
+              className={leaseStatusPillClass(d.lease_status)}
+              style={{ marginLeft: 6 }}
+              title={`Current ${t("lease")} state (today)`}
+            >
+              {`${t("lease")}: ${d.lease_status}`}
             </span>
           )}
           <span className="muted" style={{ marginLeft: 10, fontSize: 13 }}>{d.property_name}</span>
@@ -53,8 +58,8 @@ export default function UnitDetail({
         Property-level shared costs (capex, debt service) are recorded at the property tier and
         are <strong>not allocated</strong> to this unit — so unit cash flow is not a pro-rata
         share of property cash flow. The status pill above is this unit's most recent monthly
-        record; the "lease" pill is its current lease state as of today (see the Rent Roll tab
-        for full lease detail) — the two are independent and can disagree.
+        {`record; the "${t("lease")}" pill is its current ${t("lease")} state as of today (see the Rent `}
+        {`Roll tab for full ${t("lease")} detail) — the two are independent and can disagree.`}
         {d.lease_tenant_name && <> Current tenant on file: <strong>{d.lease_tenant_name}</strong>.</>}
       </p>
 

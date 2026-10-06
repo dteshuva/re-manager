@@ -237,13 +237,53 @@ def _lease_coverage_start(i: int) -> date:
     return LEASE_COVERAGE_START_BASE + timedelta(days=(i * 53) % LEASE_COVERAGE_START_SPREAD_DAYS)
 
 
+# A deterministic, sparse set of tenancies that begin carrying arrears from before this
+# dataset starts (migration 0025's `lease.opening_arrears`). ~1% of leases, by index, so the
+# accumulated-balance column and the attention feed's arrears detector have a cause that is
+# NOT a rent shortfall inside the window — proving the two inputs are independent. Set to one
+# month's contract rent: a clean, hand-checkable figure.
+#
+# Deliberately NOT seeded as negative (a tenancy starting in credit): the column is signed and
+# the engine handles it, but planting one would put a credit into the portfolio's net exposure
+# for no demonstrative gain beyond what one write-off adjustment shows better.
+def _opening_arrears(i: int, contract_rent: Decimal) -> Decimal | None:
+    return contract_rent if i % 97 == 13 else None
+
+
+# The last rent increase on a PERIODIC (rolling) tenancy — migration 0024. Only leases with
+# NO end_date qualify, because that is what a periodic tenancy IS: an England-style AST that
+# has run past its fixed term and now rolls month to month, its rent rising in discrete steps
+# on a stated date rather than by a contractual percentage. ~5% of this dataset (`bucket == 6`
+# in `_lease_plan`).
+#
+# `rent_before_increase` is deliberately left NULL, for exactly the reason `escalation_pct` is
+# (see `_DELINQUENT_UNITS`'s docstring): this seed's actual rent series is intentionally FLAT,
+# so planting a prior rent BELOW the current one would price the pre-increase months below
+# what was actually collected and manufacture a portfolio-wide credit balance — a seed-data
+# artifact, not a story. Recording the DATE is honest on its own ("the rent was last reviewed
+# then"), it drives `months_since_last_increase` (the overdue-review signal this feature
+# exists for), and an analyst entering a real prior figure on any lease gets exact pre-increase
+# pricing immediately. The feature is proven against hand-built data in verify_phase15.py
+# instead, where the actual series can be made to step with the rent.
+def _last_rent_increase(i: int, start_date: date, end_date: date | None) -> date | None:
+    if end_date is not None:
+        return None
+    # First anniversary of the tenancy: Oct-Dec 2024 given `_lease_coverage_start`'s Oct-Dec
+    # 2023 anchor — inside the fixed 2024-2025 actuals window, so the date is one a reader can
+    # see against real months rather than a figure floating outside the data.
+    return date(start_date.year + 1, start_date.month, start_date.day)
+
+
 # v2 fields (migration 0013): security deposit, escalation, MTM/fixed lease_type. All
 # reference/terms data — none feed NOI/cash-flow. Shared by every branch below via
 # `_v2_terms` so the "fixed-term leases get a modest bump, MTM leases don't" and "deposit
 # is ~1-1.5x rent regardless of status" rules can't drift between branches.
+#
+# Migrations 0024/0025 add two more here for the same reason — one definition, every branch.
 def _v2_terms(
     i: int, contract_rent: Decimal, end_date: date | None,
     concession_monthly: Decimal | None = None,
+    start_date: date | None = None,
 ) -> dict:
     # Deterministic 1.0x-1.5x deposit (in 0.1 steps), rounded to the nearest dollar — a
     # deposit is a historical fact of the tenancy, so this applies regardless of status.
@@ -272,6 +312,16 @@ def _v2_terms(
         # see `_coherent_contract_rent`) rather than recomputed here, so the SAME value is
         # used both to decide `contract_rent` and to store on the lease.
         "concession_monthly": concession_monthly,
+        # Migration 0024: when the rent last went up on a rolling tenancy (fixed-term leases
+        # get None). `start_date` is optional only so the retail lease below — which builds its
+        # own terms dict — isn't forced to thread it through for a fixed-term lease that can
+        # never qualify anyway.
+        "last_rent_increase_date": (
+            _last_rent_increase(i, start_date, end_date) if start_date is not None else None
+        ),
+        "rent_before_increase": None,  # never fabricated — see `_last_rent_increase`
+        # Migration 0025: brought-forward arrears on a sparse set of tenancies.
+        "opening_arrears": _opening_arrears(i, contract_rent),
     }
 
 
@@ -313,21 +363,21 @@ def _lease_plan(
         return {
             "tenant_name": tenant, "start_date": start_date,
             "end_date": end_date, "contract_rent": contract_rent, "status": "vacant",
-            **_v2_terms(i, contract_rent, end_date, concession_monthly),
+            **_v2_terms(i, contract_rent, end_date, concession_monthly, start_date),
         }
     if force_status == "expired":
         end_date = today - timedelta(days=5 + (i % 20))
         return {
             "tenant_name": tenant, "start_date": start_date,
             "end_date": end_date, "contract_rent": contract_rent, "status": "expired",
-            **_v2_terms(i, contract_rent, end_date, concession_monthly),
+            **_v2_terms(i, contract_rent, end_date, concession_monthly, start_date),
         }
     if force_status == "notice":
         end_date = today + timedelta(days=15 + (i % 30))
         return {
             "tenant_name": tenant, "start_date": start_date,
             "end_date": end_date, "contract_rent": contract_rent, "status": "notice",
-            **_v2_terms(i, contract_rent, end_date, concession_monthly),
+            **_v2_terms(i, contract_rent, end_date, concession_monthly, start_date),
         }
 
     # Plain 'active' lease: staggered end_date so rollover-risk queries have a realistic
@@ -353,7 +403,7 @@ def _lease_plan(
     return {
         "tenant_name": tenant, "start_date": start_date,
         "end_date": end_date, "contract_rent": contract_rent, "status": "active",
-        **_v2_terms(i, contract_rent, end_date, concession_monthly),
+        **_v2_terms(i, contract_rent, end_date, concession_monthly, start_date),
     }
 
 

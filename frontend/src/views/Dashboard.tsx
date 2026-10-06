@@ -293,7 +293,9 @@ export default function Dashboard({ token }: { token: string }) {
             <th>Gross Rent</th>
             <th>Operating</th>
             <th>NOI</th>
-            <th>Below-NOI</th>
+            <th>Debt Service</th>
+            <th>Capex</th>
+            <th>Other</th>
             <th>Cash Flow</th>
           </tr>
         </thead>
@@ -304,13 +306,15 @@ export default function Dashboard({ token }: { token: string }) {
               <td>{fmtCurrency(r.gross_rent)}</td>
               <td>{fmtCurrency(r.operating_expenses)}</td>
               <td>{fmtCurrency(r.noi)}</td>
-              <td>{fmtCurrency(r.below_noi)}</td>
+              <td>{fmtCurrency(r.debt_service)}</td>
+              <td>{fmtCurrency(r.capex)}</td>
+              <td>{fmtCurrency(r.other_below_line)}</td>
               <td className={r.cash_flow < 0 ? "value-negative" : undefined}>{fmtCurrency(r.cash_flow)}</td>
             </tr>
           ))}
           {rows.length === 0 && !error && (
             <tr className="row-empty">
-              <td colSpan={6}>
+              <td colSpan={8}>
                 No data in this period — widen the range or add records under <strong>Data Entry</strong>.
               </td>
             </tr>

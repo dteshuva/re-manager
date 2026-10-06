@@ -14,6 +14,7 @@ from app.schemas import (
     PortfolioBenchmarks,
     PortfolioBreakdown,
     PortfolioDashboard,
+    PropertyCategoryBreakdown,
     PropertyDashboard,
     PropertyMonthlyPnL,
     UnitDetail,
@@ -177,6 +178,34 @@ def property_dashboard(
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Property not found")
     return result
+
+
+@router.get(
+    "/properties/{property_id}/categories", response_model=PropertyCategoryBreakdown
+)
+def property_category_breakdown(
+    property_id: str,
+    date_from: date | None = FromParam,
+    date_to: date | None = ToParam,
+    db: Session = Depends(get_db),
+    scope: Scope = Depends(get_scope),
+):
+    """What this property's headline figures are made of, category by category.
+
+    One operating-expense total says money left the building; it does not say whether that was
+    one boiler or twelve small bills, which is the whole difference between a month worth
+    investigating and a month to ignore. Same for the below-NOI figure, which mixes a mortgage
+    with a roof.
+
+    Computed from the resolved line items, so it always reconciles with the KPI band above it.
+    """
+    get_property_or_404(db, scope, property_id)
+    rows = queries.property_categories(
+        db, scope.account_id, property_id, date_from, date_to
+    )
+    return PropertyCategoryBreakdown(
+        property_id=property_id, period_from=date_from, period_to=date_to, rows=rows
+    )
 
 
 @router.get("/properties/{property_id}/attention", response_model=AttentionFeed)

@@ -18,7 +18,7 @@ const TABS: { id: Tab; label: string; icon: string; title: string; sub: string }
   { id: "dashboard", label: "Dashboard", icon: "▤", title: "Portfolio Dashboard", sub: "Consolidated monthly P&L across every property." },
   { id: "property", label: "Property", icon: "▦", title: "Property Detail", sub: "Drill into a single property and its units." },
   { id: "investments", label: "Investments", icon: "◈", title: "Investment Insights", sub: "Cap rate, cash-on-cash and DSCR per property." },
-  { id: "rentroll", label: "Rent Roll", icon: "⌂", title: "Rent Roll", sub: "Leases, tenants, contract vs. actual rent, and rollover risk." },
+  { id: "rentroll", label: "Rent Roll", icon: "⌂", title: "Rent Roll", sub: "Leases, tenants, contract vs. actual rent, arrears, and rollover risk." },
   { id: "compliance", label: "Compliance", icon: "✔", title: "Compliance", sub: "Track licensing and safety certificates (EICR, Gas/CP12, EPC…) and their expiry." },
   { id: "entry", label: "Data Entry", icon: "✎", title: "Data Entry", sub: "Record and post monthly line items, and split shared bills across properties." },
   { id: "import", label: "Import", icon: "⤓", title: "Bulk Import", sub: "Load CSV or Excel statements." },
@@ -51,6 +51,8 @@ export default function App() {
   // Whose portfolio is on screen. Shown in the sidebar so a user with access to more
   // than one login can tell at a glance which account's data they're looking at.
   const [me, setMe] = useState<Me | null>(null);
+  // Whether /auth/me has come back yet (success OR failure). Gates the first render — see below.
+  const [meResolved, setMeResolved] = useState(false);
 
   useEffect(() => {
     if (token) localStorage.setItem(STORAGE_TOKEN_KEY, token);
@@ -66,19 +68,24 @@ export default function App() {
     }).then((r) => { if (!r.ok) handleLogout(); });
   }, []);
 
-  // Resolve which account this token acts for (drives the sidebar's account label).
+  // Resolve which account this token acts for. This drives the sidebar's account label AND —
+  // more importantly — the account's currency, which is what selects the display locale (UK
+  // dates, £) and the UK/US vocabulary in terms.ts.
   useEffect(() => {
     if (!token) {
       setMe(null);
+      setMeResolved(false);
       return;
     }
     getMe(token)
       .then((m) => {
-        setMe(m);
-        // Set the app-wide display currency before any view formats a figure.
         setActiveCurrency(m.account_currency);
+        setMe(m);
       })
-      .catch(() => setMe(null));
+      .catch(() => setMe(null))
+      // Resolved either way: a failed /auth/me must not wedge the app behind a spinner. The
+      // currency then stays at its default, which is the behaviour before this gate existed.
+      .finally(() => setMeResolved(true));
   }, [token]);
 
   // Central 401 handling: if the token expires mid-session (a tab left open past expiry),
@@ -118,6 +125,25 @@ export default function App() {
     setToken(null);
     setPassword("");
     setMe(null);
+  }
+
+  // Hold the shell until /auth/me has answered.
+  //
+  // Not cosmetic: `setActiveCurrency` is what makes dates render day-first and money render in £
+  // (see ui.ts), and it can only run once that request resolves. Rendering the views first meant
+  // every figure and every date on the first paint was formatted with the DEFAULT locale —
+  // US month-first dates and dollar signs on a British account — and a date like "09/08/2026"
+  // formatted under the wrong locale isn't merely ugly, it names a different day. The old code
+  // carried a comment claiming the currency was set "before any view formats a figure"; it
+  // wasn't, because nothing waited for it. One short wait at startup is the fix.
+  if (token && !meResolved) {
+    return (
+      <div className="auth">
+        <div className="auth__card">
+          <p className="hint" style={{ margin: 0 }}>Loading…</p>
+        </div>
+      </div>
+    );
   }
 
   if (!token) {

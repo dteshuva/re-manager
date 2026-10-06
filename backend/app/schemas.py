@@ -403,8 +403,36 @@ class TrendPoint(BaseModel):
     gross_rent: float
     operating_expenses: float
     noi: float
+    # Carried so the KPI band's debt-service card can draw the same sparkline the others do.
+    # It is the one step between NOI and cash flow that is almost always the largest, and a
+    # band that jumped straight from one to the other left the gap unexplained.
+    debt_service: float = 0.0
     cash_flow: float
     occupancy: float | None = None
+
+
+class CategoryAmount(BaseModel):
+    """One category's total for a property over a period, with the classification it CURRENTLY
+    carries — so a reclassification moves it between sections with no backfill."""
+
+    category_id: str
+    category: str
+    classification: str = Field(pattern=_CLASS_PATTERN)
+    amount: float
+
+
+class PropertyCategoryBreakdown(BaseModel):
+    """What the property's headline figures are actually made of.
+
+    Returned for every classification rather than just operating: the same query answers
+    "what is the £412 of operating expenses" and "what is the below-NOI figure", and the
+    second question is the reason a single below-NOI number was confusing in the first place.
+    """
+
+    property_id: str
+    period_from: date | None = None
+    period_to: date | None = None
+    rows: list[CategoryAmount] = []
 
 
 class PortfolioDashboard(BaseModel):
@@ -425,10 +453,18 @@ class PortfolioDashboard(BaseModel):
 class AttentionItem(BaseModel):
     """One ranked exception. ``magnitude`` is the $ used for ranking; ``type`` selects the
     detector (noi_drop | expense_spike | vacancy | occupancy_drop | high_vacancy |
-    missing_data) and what change/pct mean. For ``occupancy_drop``, ``current``/``prior`` are
-    occupancy PERCENTAGES and ``change`` is the movement in percentage points (``pct_change``
-    is null — the change is already a percentage-point figure, not a percent-of-percent).
-    ``unit_id`` / ``unit_number`` are set for unit-scoped items in the property feed."""
+    missing_data | arrears) and what change/pct mean. For ``occupancy_drop``,
+    ``current``/``prior`` are occupancy PERCENTAGES and ``change`` is the movement in
+    percentage points (``pct_change`` is null — the change is already a percentage-point
+    figure, not a percent-of-percent).
+    ``unit_id`` / ``unit_number`` are set for unit-scoped items in the property feed.
+
+    For ``arrears`` (migration 0025) ``magnitude``/``current`` are the tenancy's CUMULATIVE
+    unpaid balance, ``change`` is the movement into the flagged month and ``prior`` the
+    balance carried in before it; ``month`` is the unit's WORST month in the period, reported
+    once rather than repeated every month the balance stood (see ``attention._arrears``).
+    ``detail`` carries the tenant, the lease, that month's rent due/collected, the balance in
+    months of rent, and ``months_over_threshold``."""
 
     type: str
     property_id: str
@@ -546,6 +582,20 @@ class UnitRosterRow(PnLMetrics):
     # can legitimately disagree with it. "vacant" when no lease is on file at all.
     lease_status: str | None = None
     lease_tenant_name: str | None = None
+    # The tenancy's own rent schedule (migrations 0012/0024), surfaced here so the property page
+    # can show and EDIT the three figures an operator changes most — start date, last rent
+    # increase, rent — without sending them to the rent roll for them. Reference data, same
+    # invariant as everywhere else: it never feeds the P&L metrics on this very row.
+    # All null when the unit has no tenancy on file.
+    lease_id: str | None = None
+    lease_contract_rent: float | None = None
+    lease_start: date | None = None
+    lease_end: date | None = None  # null = periodic/rolling (no fixed term)
+    last_rent_increase_date: date | None = None
+    rent_before_increase: float | None = None
+    # Counts from the last increase, or from `lease_start` when the rent has never been raised —
+    # identical rule to the rent roll's column of the same name.
+    months_since_last_increase: int | None = None
 
 
 class UnitRoster(BaseModel):
@@ -608,6 +658,10 @@ class StatementRow(BaseModel):
     # for one the agent actually printed against this property.
     kind: str = "line"
     note: str | None = None  # what the statement said alongside the figure
+    # The label exactly as the statement printed it, kept even after a saved format has
+    # renamed the row. Teaching a format means recording "this sender's word for that
+    # category", so the sender's word has to survive the renaming.
+    raw_category: str | None = None
 
 
 class StatementPreview(BaseModel):
@@ -615,17 +669,30 @@ class StatementPreview(BaseModel):
     this for review, offers to create any unknown property/categories, then applies the rows
     through the existing ``/import/rows`` seam (idempotent, lock-protected, dry-run-able)."""
 
-    backend: str  # "ollama" | "heuristic" | "rent_roll"
-    # The SHAPE of the file this came from: "single" (one statement, one property) or
-    # "rent_roll" (one page listing many properties, split into one preview each).
+    backend: str  # "ollama" | "heuristic" | "rent_roll" | "sectioned"
+    # The SHAPE of the file this came from: "single" (one statement, one property),
+    # "rent_roll" (one page listing many properties) or "sectioned" (a table per property).
     format: str = "single"
     detected_property: str | None = None
+    # The property as the statement printed it, before it was matched to a stored one. The
+    # UI teaches a format with this, not with the matched name.
+    raw_property: str | None = None
     property_id: str | None = None  # matched existing property, if any
     property_unknown: bool = False
     detected_month: date | None = None
     rows: list[StatementRow] = []
     unknown_categories: list[str] = []
     warnings: list[str] = []
+    # The layout's identity, so the UI can offer to teach this sender's format, and which
+    # saved format (if any) was applied. ``sample`` is the masked boilerplate the fingerprint
+    # was taken from — it travels with the preview because teaching the format needs it, and
+    # because a person deciding whether two files are "the same format" deserves to see what
+    # that was decided on.
+    fingerprint: str = ""
+    sample: str = ""
+    format_id: str | None = None
+    format_label: str | None = None
+    format_match: str | None = None  # "exact" | "close"
 
 
 class UnknownCategory(BaseModel):
@@ -659,9 +726,60 @@ class StatementFileNote(BaseModel):
     """
 
     filename: str
-    format: str  # "single" | "rent_roll"
+    format: str  # "single" | "rent_roll" | "sectioned"
     statements: int  # how many property statements this file produced
     warnings: list[str] = []
+    # The layout's identity, and the saved format (if any) whose mappings were applied to
+    # this file's rows. ``fingerprint`` is always present so the UI can offer to teach a new
+    # format; the rest are set only when one was recognised.
+    fingerprint: str = ""
+    sample: str = ""
+    format_id: str | None = None
+    format_label: str | None = None
+    format_match: str | None = None  # "exact" | "close"
+
+
+class StatementFormatAlias(BaseModel):
+    """One remembered answer: what this sender's word means in this account."""
+
+    raw: str  # as the statement printed it
+    target_id: str | None = None  # categories.id / properties.id, resolved in the account
+    classification: str | None = Field(default=None, pattern=_CLASS_PATTERN)
+
+
+class StatementFormatIn(BaseModel):
+    """Teach (or re-teach) a format from a preview the operator has just corrected.
+
+    ``fingerprint`` and ``sample`` come straight back from the extract response. Everything
+    else is the corrections: which category each raw label means, which property each raw
+    address is, and whether this sender's statements should post to the month of the
+    statement period or of the rent period.
+    """
+
+    fingerprint: str = Field(min_length=8, max_length=64)
+    sample: str = ""
+    label: str = Field(min_length=1, max_length=120)
+    shape: str = "single"
+    categories: list[StatementFormatAlias] = []
+    properties: list[StatementFormatAlias] = []
+    month_rule: str | None = Field(default=None, pattern=r"^(statement_period|rent_period)$")
+
+
+class StatementFormatOut(BaseModel):
+    """A saved format as the UI lists it. The alias maps are returned resolved to NAMES as
+    well as ids, because a list of UUIDs tells an operator nothing about what the format
+    will do to their next upload."""
+
+    id: str
+    label: str
+    shape: str
+    fingerprint: str
+    month_rule: str | None = None
+    times_used: int = 0
+    last_used_at: datetime | None = None
+    category_aliases: dict[str, str] = {}  # raw label -> category name
+    property_aliases: dict[str, str] = {}  # raw label -> property name
+    classification_overrides: dict[str, str] = {}
 
 
 class StatementBatchPreview(BaseModel):
@@ -1152,14 +1270,43 @@ class LeaseIn(BaseModel):
     distinct from bad debt — see the migration's docstring. Reference data, same
     invariant. IMPORTANT for `update_lease` (a full-replace PATCH): this field MUST be
     included in every save from the rent-roll editor, or an edit to any other field would
-    silently null out an existing concession."""
+    silently null out an existing concession.
 
-    tenant_name: str = Field(min_length=1)
+    Periodic-tenancy fields (migration 0024) — what makes an England-style ROLLING tenancy
+    pricable, where the rent rises in discrete steps on a stated date rather than on a
+    contractual percentage:
+        ``last_rent_increase_date``  when the current ``contract_rent`` took effect. Null =
+                                     never increased (the rent has been ``contract_rent``
+                                     since ``start_date``), which is every pre-0024 lease.
+        ``rent_before_increase``     the rent that date replaced. Null = an increase happened
+                                     but the prior figure isn't held. Rejected (422/400)
+                                     without a date to attach it to, since there would be no
+                                     month at which it stopped applying.
+
+    ``opening_arrears`` (migration 0025): the arrears balance brought forward at
+    ``start_date`` — debt predating this app's records. SIGNED; negative means the tenancy
+    began in credit. Arrears itself is DERIVED (rent due vs. rent collected, accumulated),
+    so this and ``arrears_adjustment`` rows are its only stored inputs.
+
+    All four carry the same full-replace-PATCH hazard called out for ``concession_monthly``
+    above: they must be included in every save, or an unrelated edit silently erases them."""
+
+    # Optional (migration 0026): a tenancy recorded from statements often has no name on file,
+    # and the rent schedule/arrears math never reads it. Blank is normalised to None by the
+    # router, so "not recorded" has exactly one representation.
+    tenant_name: str | None = None
     start_date: date
     end_date: date | None = None
     contract_rent: float = Field(ge=0)
     status: str = Field(default="active", pattern=_LEASE_STATUS_PATTERN)
     concession_monthly: float | None = Field(default=None, ge=0)
+    last_rent_increase_date: date | None = None
+    rent_before_increase: float | None = Field(default=None, ge=0)
+    opening_arrears: float | None = None
+    # Migration 0027: the month from which this tenancy's arrears are meaningful (YYYY-MM-01).
+    # None = from the beginning. Set it to exclude a HANDOVER month, where rent apportioned at
+    # completion is indistinguishable from a tenant who underpaid — see the migration.
+    arrears_from_month: date | None = None
     security_deposit: float | None = Field(default=None, ge=0)
     escalation_pct: float | None = Field(default=None, ge=0, le=100)
     escalation_frequency_months: int = Field(default=12, gt=0)
@@ -1258,6 +1405,61 @@ class RentRollRow(BaseModel):
     period_actual_rent: float | None = None
     variance: float | None = None
     variance_pct: float | None = None
+    # ---- Periodic-tenancy rent history (migration 0024) ----
+    # `last_rent_increase_date` is when the current `contract_rent` took effect and
+    # `rent_before_increase` what it replaced (null = not held). `months_since_last_increase`
+    # counts from that date, or from `lease_start` when the rent has never been increased —
+    # the operational read on a rolling tenancy, where a rise is typically annual and no
+    # sooner, so a large number is a review that's overdue. Null when there's no lease on file.
+    last_rent_increase_date: date | None = None
+    rent_before_increase: float | None = None
+    months_since_last_increase: int | None = None
+    # The current lease's stored brought-forward arrears balance (migration 0025), echoed here
+    # so the rent roll's full-replace lease editor can round-trip it instead of nulling it out
+    # on an unrelated edit — the same hazard called out for `concession_monthly` in `LeaseIn`.
+    # Already included in `arrears_balance` below; this is the input, not a second total.
+    opening_arrears: float | None = None
+    # ---- Arrears (migration 0025) ----
+    # REFERENCE data, like every other lease-derived figure here: never feeds NOI/cash-flow.
+    # DERIVED, never stored: `rent_due - rent_collected + adjustments` per month, accumulated
+    # over the TENANCY (the running balance resets at each lease — an outgoing tenant's debt
+    # is theirs). Only months with an actual record on file accrue; a month with no record is
+    # MISSING DATA, not debt. See `app.queries._unit_arrears_ledgers`.
+    #
+    # `arrears_balance` is the CUMULATIVE figure: everything this tenancy owes as at
+    # `period_to`, including `lease.opening_arrears`. `arrears_movement` is the MONTHLY
+    # figure: the net change across the rent roll's window only, so
+    # `arrears_opening_balance + arrears_movement == arrears_balance` exactly.
+    # `arrears_rent_due`/`arrears_rent_collected`/`arrears_adjustments` are the window's three
+    # components behind that movement.
+    #
+    # `arrears_rent_due` is NET of any standing concession (`lease.concession_monthly`), and
+    # `arrears_concessions` reports how much was netted off. Rent the landlord agreed not to
+    # charge is not rent the tenant failed to pay — the same line the rent waterfall already
+    # draws between `concessions` and `bad_debt`. Explicitly VACANT months (`is_vacant`) are
+    # excluded entirely for the same reason: no tenant, no debt. £0 collected on an occupied
+    # month is NOT treated as vacancy — that's the most important arrears case there is.
+    #
+    # Negative is real and meaningful throughout: a tenant paid ahead and is in CREDIT. The
+    # balance is deliberately NOT floored at zero.
+    #
+    # `arrears_months_of_rent` restates the balance in months of the current rent — the figure
+    # a letting agent quotes, and what makes £900 owed comparable between a £450 and an £1,800
+    # door. Null when there's no priced month to divide by.
+    #
+    # Zeros (not nulls) for a unit with no lease: no tenancy means nothing owed, a fact rather
+    # than a gap. All null for a SHELL unit, which has no tenancy of its own at all.
+    # The tenancy's `arrears_from_month` (migration 0027), echoed so the editor can round-trip
+    # it and the UI can say which month the balance is measured from. None = from the beginning.
+    arrears_from_month: date | None = None
+    arrears_balance: float | None = None
+    arrears_opening_balance: float | None = None
+    arrears_movement: float | None = None
+    arrears_rent_due: float | None = None
+    arrears_rent_collected: float | None = None
+    arrears_concessions: float | None = None
+    arrears_adjustments: float | None = None
+    arrears_months_of_rent: float | None = None
 
 
 class OccupancySummary(BaseModel):
@@ -1299,6 +1501,28 @@ class RentVarianceRollup(BaseModel):
     unit_count: int  # non-shell units included in this rollup
 
 
+class ArrearsRollup(BaseModel):
+    """Property/portfolio arrears rollup for the rent roll's window (migration 0025).
+    Excludes shell/synthetic units, same as `RentVarianceRollup`.
+
+    ``total_balance`` is the NET position (units in credit net against units owing) — the
+    portfolio's real exposure. ``units_in_arrears`` is a HEADCOUNT of units actually owing at
+    `period_to`, which is the different question "how many doors do I have to chase"; a single
+    figure can't answer both, so both are reported. ``largest_balance`` is the worst single
+    unit, null when there are no units in scope."""
+
+    total_balance: float
+    total_movement: float
+    total_rent_due: float
+    total_rent_collected: float
+    total_concessions: float
+    total_adjustments: float
+    units_in_arrears: int
+    units_in_credit: int
+    unit_count: int
+    largest_balance: float | None = None
+
+
 class RentRoll(BaseModel):
     property_id: str | None = None  # None for the portfolio-wide rent roll
     as_of: date
@@ -1311,6 +1535,106 @@ class RentRoll(BaseModel):
     period_from: date | None = None
     period_to: date | None = None
     rent_variance: RentVarianceRollup | None = None
+    # Arrears rollup over the SAME window (migration 0025). Always present; all-zero when the
+    # scope has no summarized months yet.
+    arrears: ArrearsRollup | None = None
+
+
+class ArrearsMonth(BaseModel):
+    """One month of one tenancy's arrears ledger (migration 0025) — the MONTHLY basis, where
+    the accumulated balance comes from.
+
+    ``movement = rent_due - rent_collected + adjustments``, and ``balance`` is the running
+    total after it (starting from the lease's ``opening_arrears``). A negative ``movement`` is
+    a tenant catching up; a negative ``balance`` means they are in credit.
+
+    ``rent_due`` is NET of ``concession`` (a standing discount the landlord granted — not rent
+    anyone failed to pay); the gross figure is ``rent_due + concession``. Explicitly vacant
+    months never appear at all: no tenant, no debt.
+
+    ``has_record`` is False for a month that appears only because an adjustment landed on it —
+    a write-off is a fact of the tenancy, recorded whether or not a rent record exists for
+    that month. Months with rent due but NO record don't appear at all: that's missing data,
+    not debt. ``holdover`` flags a month priced from a lapsed lease frozen at its own end date
+    (the tenant stayed on past the term)."""
+
+    month: date
+    rent_due: float  # NET of `concession` below — what was actually owed
+    rent_collected: float
+    concession: float
+    adjustments: float
+    movement: float
+    balance: float
+    has_record: bool = False
+    holdover: bool = False
+
+
+class ArrearsLeaseLedger(BaseModel):
+    """One tenancy's arrears ledger, month by month, with its own running balance.
+
+    Per-TENANCY by design: the balance resets at each lease, because an outgoing tenant's
+    unpaid rent is their debt and not the next tenant's. ``opening_arrears`` is what the
+    tenancy was already carrying at ``lease_start`` (debt predating this app's records);
+    ``closing_balance`` is ``opening_arrears`` plus every month's movement."""
+
+    lease_id: str
+    tenant_name: str | None = None  # None = not recorded (migration 0026)
+    lease_start: date
+    lease_end: date | None = None
+    status: str
+    opening_arrears: float
+    arrears_from_month: date | None = None  # months before this are outside the measurement
+    months: list[ArrearsMonth] = []
+    total_rent_due: float
+    total_rent_collected: float
+    total_concessions: float
+    total_adjustments: float
+    closing_balance: float
+
+
+class UnitArrears(BaseModel):
+    """Every tenancy a unit has ever had, each with its own arrears ledger, oldest first.
+
+    Prior tenancies are included because a former tenant's unpaid rent doesn't vanish when
+    they leave — it stops being collectable from the CURRENT tenant, which is a different
+    statement, and one an arrears report has to be able to make. ``current_balance`` is the
+    balance of the lease the rent roll calls current, so the ledger and the rent-roll row
+    always agree."""
+
+    unit_id: str
+    as_of: date
+    current_lease_id: str | None = None
+    current_balance: float
+    leases: list[ArrearsLeaseLedger] = []
+
+
+class ArrearsAdjustmentIn(BaseModel):
+    """A signed, dated movement on a tenancy's arrears balance that is NOT a rent shortfall
+    (migration 0025) — the escape hatch a derived balance needs.
+
+    ``kind`` fixes the sign, because the sign IS the meaning: 'write_off' must be negative
+    (arrears forgiven, or recovered from the deposit at check-out), 'charge' must be positive
+    (a sum owed that the rent schedule doesn't describe), and only 'correction' may go either
+    way. Zero is rejected — it's a row that claims something happened while saying nothing.
+    ``month`` is month-grain (the 1st), same convention as monthly_records.
+
+    This never touches NOI/cash-flow. A write-off that should ALSO hit the P&L as bad-debt
+    expense is an ordinary line item, entered as one."""
+
+    month: date
+    amount: float
+    kind: str = Field(pattern=r"^(write_off|charge|correction)$")
+    note: str | None = None
+
+
+class ArrearsAdjustmentOut(ArrearsAdjustmentIn):
+    id: str
+    lease_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class PercentageRentCalc(BaseModel):
@@ -1336,7 +1660,7 @@ class LeaseExpirationItem(BaseModel):
     label: str | None = None
     property_id: str
     property_name: str
-    tenant_name: str
+    tenant_name: str | None = None  # None = not recorded (migration 0026)
     lease_end: date
     contract_rent: float
     months_to_expiry: int

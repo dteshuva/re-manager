@@ -4,6 +4,7 @@ import {
   createCategory,
   createProperty,
   createUnit,
+  deleteStatementFormat,
   extractStatementsBatch,
   getImportTemplate,
   getMissing,
@@ -12,6 +13,7 @@ import {
   listCategories,
   listProperties,
   listUnits,
+  saveStatementFormat,
   type Category,
   type Classification,
   type ColumnMapping,
@@ -20,6 +22,7 @@ import {
   type MissingScope,
   type Property,
   type StatementFileNote,
+  type StatementFormatAliasIn,
   type StatementRow,
 } from "../api";
 import { btn, btnPrimary, card, input } from "../ui";
@@ -254,6 +257,9 @@ type Stmt = {
   backend: string;
   warnings: string[];
   detectedProperty: string | null;
+  // The property as the STATEMENT printed it, before it was matched. Teaching a format
+  // records "this sender's name for that property", so the sender's name has to survive.
+  rawProperty: string | null;
   propertyId: string;
   month: string; // YYYY-MM
   rows: BatchRow[];
@@ -261,6 +267,155 @@ type Stmt = {
   expanded: boolean;
   result: ImportReport | null;
 };
+
+
+// A small coloured label. Module-level so both the per-statement review and the format
+// panel draw the same one.
+const chip = (bg: string, fg: string, text: string) => (
+  <span style={{ background: bg, color: fg, borderRadius: 4, padding: "1px 6px", fontSize: 12, fontWeight: 600 }}>
+    {text}
+  </span>
+);
+
+// What a parser cannot know, and a person can: that this sender's "Mgt Fee" is your
+// "Management Fee", that "64 King Edward Street" is the property you store as "64 King Edward
+// St, Gateshead". Saved against a fingerprint of the LAYOUT, so the next statement from the
+// same agent arrives already corrected.
+//
+// Deliberately taught from the corrections ON SCREEN rather than from a separate form: what
+// gets remembered is exactly what you are looking at, so there is nothing to keep in sync and
+// no second place to get it wrong. And it is applied to the next REVIEW, never straight to an
+// import — a mapping that goes stale stays visible and one edit away.
+function TeachFormat({
+  token,
+  note,
+  stmts,
+  catByName,
+  onChanged,
+}: {
+  token: string;
+  note: StatementFileNote;
+  stmts: Stmt[];
+  catByName: Map<string, Category>;
+  onChanged: () => void;
+}) {
+  const [label, setLabel] = useState(note.format_label ?? note.filename.replace(/\.pdf$/i, ""));
+  const [monthRule, setMonthRule] = useState<"" | "statement_period" | "rent_period">("");
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Only the statements this file produced — one for an ordinary statement, one per property
+  // for a portfolio.
+  const mine = stmts.filter((s) => (s.sourceFile ?? s.filename) === note.filename && !s.error);
+
+  const properties: StatementFormatAliasIn[] = [];
+  const seenProp = new Set<string>();
+  for (const s of mine) {
+    const raw = (s.rawProperty ?? "").trim();
+    if (!raw || !s.propertyId || seenProp.has(raw.toLowerCase())) continue;
+    seenProp.add(raw.toLowerCase());
+    properties.push({ raw, target_id: s.propertyId });
+  }
+
+  const categories: StatementFormatAliasIn[] = [];
+  const seenCat = new Set<string>();
+  for (const s of mine) {
+    for (const r of s.rows) {
+      const raw = (r.raw_category ?? r.category).trim();
+      const target = catByName.get(r.category.trim().toLowerCase());
+      if (!raw || !target || seenCat.has(raw.toLowerCase())) continue;
+      seenCat.add(raw.toLowerCase());
+      categories.push({ raw, target_id: target.id, classification: r.classification });
+    }
+  }
+
+  async function save() {
+    setBusy(true);
+    setErr(null);
+    try {
+      await saveStatementFormat(token, {
+        fingerprint: note.fingerprint,
+        sample: note.sample,
+        label: label.trim(),
+        shape: note.format,
+        categories,
+        properties,
+        month_rule: monthRule || null,
+      });
+      setSaved(label.trim());
+      onChanged();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function forget() {
+    if (!note.format_id) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await deleteStatementFormat(token, note.format_id);
+      setSaved(null);
+      onChanged();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!note.fingerprint) return null;
+
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border, #e5e7eb)" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {note.format_label
+          ? chip(
+              note.format_match === "close" ? "#fdf6e3" : "#ecfdf5",
+              note.format_match === "close" ? "#8a6d3b" : "#065f46",
+              note.format_match === "close"
+                ? `recognised (close): ${note.format_label}`
+                : `recognised: ${note.format_label}`,
+            )
+          : chip("#eef2ff", "#3730a3", "new layout")}
+        <input
+          style={{ ...input, width: 200 }}
+          value={label}
+          placeholder="Who sends this (e.g. Shell Management)"
+          onChange={(e) => setLabel(e.target.value)}
+        />
+        <select
+          style={input}
+          value={monthRule}
+          onChange={(e) => setMonthRule(e.target.value as "" | "statement_period" | "rent_period")}
+        >
+          <option value="">Month: as read from the statement</option>
+          <option value="statement_period">Always the statement's own period</option>
+          <option value="rent_period">Always the tenancy (rent) period</option>
+        </select>
+        <button style={btnPrimary} disabled={busy || !label.trim()} onClick={save}>
+          {busy ? "Saving…" : note.format_label ? "Update this format" : "Remember this format"}
+        </button>
+        {note.format_id && (
+          <button style={btn} disabled={busy} onClick={forget}>
+            Forget
+          </button>
+        )}
+      </div>
+      <p className="muted" style={{ marginTop: 6, marginBottom: 0 }}>
+        {saved
+          ? `Saved as “${saved}”. The next statement in this layout will come in already corrected.`
+          : `Remembers ${properties.length} property name(s) and ${categories.length} category name(s) exactly as they are set above.`}
+      </p>
+      {err && (
+        <p style={{ color: "var(--negative)", marginTop: 6, marginBottom: 0 }}>{err}</p>
+      )}
+    </div>
+  );
+}
 
 function StatementBatchSection({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
@@ -316,6 +471,7 @@ function StatementBatchSection({ token }: { token: string }) {
           backend: pv?.backend ?? "",
           warnings: pv?.warnings ?? [],
           detectedProperty: pv?.detected_property ?? null,
+          rawProperty: pv?.raw_property ?? pv?.detected_property ?? null,
           propertyId: pv?.property_id ?? "",
           month: pv?.detected_month ? pv.detected_month.slice(0, 7) : "",
           rows: (pv?.rows ?? []).map((r, i) => ({ ...r, include: true, key: i })),
@@ -516,11 +672,6 @@ function StatementBatchSection({ token }: { token: string }) {
   const totalApplied = doneReports.reduce((a, r) => a + r.applied_line_items, 0);
   const errorCount = stmts.filter((s) => s.error).length;
 
-  const chip = (bg: string, fg: string, text: string) => (
-    <span style={{ background: bg, color: fg, borderRadius: 4, padding: "1px 6px", fontSize: 12, fontWeight: 600 }}>
-      {text}
-    </span>
-  );
   const catChip = (name: string) => {
     const st = catState(name);
     if (st === "approved") return chip("#e6f4ea", "var(--positive)", "approved");
@@ -590,20 +741,29 @@ function StatementBatchSection({ token }: { token: string }) {
               which portfolio charges were split across the properties, and which figures on
               the page named nobody and were therefore left out. */}
           {files
-            .filter((f) => f.format === "rent_roll" || f.warnings.length > 0)
+            .filter((f) => f.format !== "single" || f.warnings.length > 0 || !!f.fingerprint)
             .map((f) => (
               <div key={f.filename} style={{ ...card, background: "var(--surface-2, #fafafa)" }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <strong>{f.filename}</strong>
                   {f.format === "rent_roll"
                     ? chip("#eef2ff", "#3730a3", `rent roll · ${f.statements} properties`)
-                    : chip("#eef2ff", "#3730a3", "statement")}
+                    : f.format === "sectioned"
+                      ? chip("#eef2ff", "#3730a3", `portfolio statement · ${f.statements} properties`)
+                      : chip("#eef2ff", "#3730a3", "statement")}
                 </div>
                 {f.warnings.map((w, i) => (
                   <p key={i} className="muted" style={{ marginTop: 6, marginBottom: 0 }}>
                     · {w}
                   </p>
                 ))}
+                <TeachFormat
+                  token={token}
+                  note={f}
+                  stmts={stmts}
+                  catByName={catByName}
+                  onChanged={() => void reloadLookups()}
+                />
               </div>
             ))}
 

@@ -25,6 +25,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Integer,
     Numeric,
     String,
     Text,
@@ -182,6 +183,17 @@ class Lease(Base):
     discount/concession, distinct from bad debt (delinquency): NULL/unset for the
     overwhelming majority of leases. See the migration's docstring for why this is modeled
     as an ongoing monthly discount rather than a move-in "N free months" figure.
+
+    Migration 0024 adds ``last_rent_increase_date`` / ``rent_before_increase``, which make a
+    PERIODIC (rolling, no-end-date) tenancy pricable: an English tenancy's rent rises in
+    discrete steps on a stated date (section 13 / by agreement), not on a contractual
+    percentage, so "when did the current rent take effect, and what was it before" is the
+    schedule — not ``escalation_pct``. See the migration's docstring for how the two
+    coexist, and ``app.queries._rent_due_for_month`` for the one place the rule is applied.
+
+    Migration 0025 adds ``opening_arrears`` — the arrears balance brought forward at
+    ``start_date``. Arrears itself is DERIVED (rent due vs. rent collected, accumulated over
+    the tenancy); this and :class:`ArrearsAdjustment` are the only two stored inputs to it.
     """
 
     __tablename__ = "lease"
@@ -190,7 +202,10 @@ class Lease(Base):
     unit_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), ForeignKey("units.id", ondelete="CASCADE"), nullable=False
     )
-    tenant_name: Mapped[str] = mapped_column(Text, nullable=False)
+    # Optional as of migration 0026: a tenancy onboarded from agent statements often has no
+    # name on file, and nothing here computes from it. NULL = not recorded; "" is still rejected
+    # so the two can't be confused.
+    tenant_name: Mapped[str | None] = mapped_column(Text)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     # NULL end_date = month-to-month (no fixed term, so no rollover horizon applies).
     end_date: Mapped[date | None] = mapped_column(Date)
@@ -208,6 +223,25 @@ class Lease(Base):
     # docstring for why this beats a "free months at move-in" model for this app's fixed
     # actuals window).
     concession_monthly: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    # Migration 0024 (periodic/rolling tenancies): the date ``contract_rent`` took effect.
+    # NULL = never increased, so the rent has been ``contract_rent`` since ``start_date``
+    # (every pre-0024 row). When set it also becomes the ESCALATION ANCHOR in place of
+    # ``start_date`` — see app/queries.py's ``_rent_due_for_month``.
+    last_rent_increase_date: Mapped[date | None] = mapped_column(Date)
+    # Migration 0024: the rent immediately BEFORE ``last_rent_increase_date``. NULL = an
+    # increase happened but the prior figure isn't held (``contract_rent`` is used for the
+    # earlier months). Only meaningful alongside a date — enforced in the DB.
+    rent_before_increase: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    # Migration 0025: arrears balance brought forward at ``start_date`` — debt predating
+    # this app's records. SIGNED: negative = the tenancy began in credit. NULL/0 for the
+    # overwhelming majority. The only stored input to an otherwise fully DERIVED balance
+    # (see the migration's docstring and app/queries.py's ``_unit_arrears_ledger``).
+    opening_arrears: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    # Migration 0027: the month from which this tenancy's arrears are MEANINGFUL. NULL = from
+    # the beginning (every pre-0027 row). Set it to exclude a handover month, where an
+    # apportioned-at-completion rent looks identical to a tenant who underpaid. Months before it
+    # contribute nothing at all — not "paid", not "owed", simply outside the measurement.
+    arrears_from_month: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -219,7 +253,10 @@ class Lease(Base):
         ),
         CheckConstraint("contract_rent >= 0", name="lease_contract_rent_nonneg"),
         CheckConstraint("end_date IS NULL OR end_date >= start_date", name="lease_end_after_start"),
-        CheckConstraint("length(trim(tenant_name)) > 0", name="lease_tenant_name_nonempty"),
+        CheckConstraint(
+            "tenant_name IS NULL OR length(trim(tenant_name)) > 0",
+            name="lease_tenant_name_nonempty",
+        ),
         CheckConstraint(
             "security_deposit IS NULL OR security_deposit >= 0", name="lease_security_deposit_nonneg"
         ),
@@ -240,6 +277,88 @@ class Lease(Base):
         CheckConstraint(
             "concession_monthly IS NULL OR concession_monthly >= 0",
             name="lease_concession_monthly_nonneg",
+        ),
+        # Migration 0024: a rent increase can neither predate the tenancy nor postdate its
+        # end, and a prior rent with no date for it is uninterpretable (there'd be no month
+        # at which it stopped applying) — so it's rejected rather than guessed at.
+        CheckConstraint(
+            "last_rent_increase_date IS NULL OR last_rent_increase_date >= start_date",
+            name="lease_last_increase_after_start",
+        ),
+        CheckConstraint(
+            "last_rent_increase_date IS NULL OR end_date IS NULL "
+            "OR last_rent_increase_date <= end_date",
+            name="lease_last_increase_within_term",
+        ),
+        CheckConstraint(
+            "rent_before_increase IS NULL OR rent_before_increase >= 0",
+            name="lease_rent_before_increase_nonneg",
+        ),
+        CheckConstraint(
+            "rent_before_increase IS NULL OR last_rent_increase_date IS NOT NULL",
+            name="lease_rent_before_increase_needs_date",
+        ),
+        CheckConstraint(
+            "arrears_from_month IS NULL "
+            "OR date_trunc('month', arrears_from_month) = arrears_from_month",
+            name="lease_arrears_from_month_first",
+        ),
+    )
+
+
+class ArrearsAdjustment(Base):
+    """A signed, dated movement on a tenancy's arrears balance that is NOT a rent shortfall
+    (migration 0025).
+
+    Arrears itself is DERIVED — ``rent_due - rent_collected``, accumulated over the tenancy
+    (see the migration's docstring for why it is computed rather than stored). Two things
+    that derivation cannot express are stored instead: ``lease.opening_arrears`` (the
+    balance brought forward from before this app's records) and this table.
+
+    ``kind`` is 'write_off' (arrears forgiven, or recovered from the deposit at check-out —
+    always negative), 'charge' (a sum owed that the rent schedule doesn't describe — always
+    positive), or 'correction' (either sign; the honest escape hatch). The sign is enforced
+    against the kind in the DB, because the sign IS the meaning and can't be left to the
+    writer's discretion.
+
+    Keyed to a LEASE, not a unit: an outgoing tenant's debt is theirs, and the running
+    balance resets at each tenancy. Carries no ``account_id`` — ownership is transitive
+    through lease -> unit -> property, resolved by ``app.scoping.get_lease_or_404``, exactly
+    as ``property_certificate``/``property_tag`` resolve theirs through ``property_id``.
+
+    Like every other reference entity here, this NEVER feeds NOI/cash-flow: it moves a
+    balance that is reported alongside the P&L, not an amount of income or expense. A
+    write-off that should also hit the P&L as bad-debt expense is an ordinary line item,
+    entered as such.
+    """
+
+    __tablename__ = "arrears_adjustment"
+
+    id: Mapped[str] = UUID_PK()
+    lease_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("lease.id", ondelete="CASCADE"), nullable=False
+    )
+    month: Mapped[date] = mapped_column(Date, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "date_trunc('month', month) = month", name="arrears_adjustment_month_first"
+        ),
+        CheckConstraint(
+            "kind IN ('write_off','charge','correction')", name="arrears_adjustment_kind_check"
+        ),
+        CheckConstraint("amount <> 0", name="arrears_adjustment_amount_nonzero"),
+        CheckConstraint(
+            "(kind = 'write_off' AND amount < 0) OR (kind = 'charge' AND amount > 0) "
+            "OR kind = 'correction'",
+            name="arrears_adjustment_kind_sign",
         ),
     )
 
@@ -886,3 +1005,54 @@ class AuditLog(Base):
     before: Mapped[dict | None] = mapped_column(JSONB)
     after: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class StatementFormat(Base):
+    """One sender's statement layout, and what this account's operator decided its words mean.
+
+    The parser reads figures off the page without a template (see :mod:`app.statements`);
+    this is where the MEANINGS live — that this agent's "Mgt Fee" is the account's
+    "Management Fee", that "64 King Edward Street" is the property stored as "64 King Edward
+    St, Gateshead". Keyed by :func:`app.statements.fingerprint`, which hashes the layout's
+    stable parts, so next month's statement from the same agent finds the same answers.
+
+    Applied when building the review PREVIEW, never at import: a saved format changes what is
+    proposed, and a human still presses the button. See migration 0028.
+    """
+
+    __tablename__ = "statement_format"
+
+    id: Mapped[str] = UUID_PK()
+    account_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    fingerprint: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    shape: Mapped[str] = mapped_column(Text, nullable=False)
+    sample: Mapped[str | None] = mapped_column(Text)
+    # raw label (lowercased, as printed) -> categories.id / properties.id. JSONB, so the ids
+    # are validated against the caller's own account on the way in AND on the way out.
+    category_aliases: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    property_aliases: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    classification_overrides: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    month_rule: Mapped[str | None] = mapped_column(Text)
+    times_used: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "fingerprint", name="statement_format_account_fingerprint_key"),
+    )

@@ -14,7 +14,7 @@ and re-upload. Idempotency and lock protection live in :mod:`app.importer`.
 """
 
 import json
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import PlainTextResponse
@@ -25,7 +25,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.deps import Scope, get_scope
 from app.importer import apply_import
-from app.models import Category, MonthlyRecord, Property, Unit
+from app.models import Category, MonthlyRecord, Property, StatementFormat, Unit
 from app.parsing import TEMPLATE_CSV, parse_table
 from app.schemas import (
     ImportReport,
@@ -34,11 +34,13 @@ from app.schemas import (
     StatementBatchItem,
     StatementBatchPreview,
     StatementFileNote,
+    StatementFormatIn,
+    StatementFormatOut,
     StatementPreview,
     StatementRow,
     UnknownCategory,
 )
-from app.statements import StatementFile, extract_statements
+from app.statements import StatementFile, extract_statements, layout_similarity
 
 router = APIRouter(prefix="/import", tags=["import"])
 
@@ -129,18 +131,160 @@ def _resolve_preview(ex, prop_by_name: dict, cat_by_name: dict, fmt: str = "sing
                 amount=r["amount"],
                 kind=r.get("kind", "line"),
                 note=r.get("note"),
+                raw_category=(r.get("raw_category") or r["category"]).strip(),
             )
         )
     return StatementPreview(
         backend=ex.backend,
         format=fmt,
         detected_property=ex.property_name,
+        raw_property=ex.raw_property_name or ex.property_name,
         property_id=matched_prop.id if matched_prop else None,
         property_unknown=bool(ex.property_name) and matched_prop is None,
         detected_month=ex.month,
         rows=rows,
         unknown_categories=list(unknown.values()),
         warnings=ex.warnings,
+    )
+
+
+# --------------------------------------------------------------- saved statement formats
+# What a format knows is what a PARSER cannot: that this sender's "Mgt Fee" is the account's
+# "Management Fee", that "64 King Edward Street" is the property stored as "64 King Edward
+# St, Gateshead", that this sender's statements should post to the tenancy month rather than
+# the one it declares. None of that is readable off a single statement and all of it is the
+# same in the next one, so it is remembered against the layout's fingerprint — see migration
+# 0028 and :func:`app.statements.fingerprint`.
+#
+# Everything here happens between extraction and the review screen. A saved format changes
+# what is PROPOSED; the operator still reads it and still presses the button, so a mapping
+# that has gone stale stays visible and one edit away rather than quietly posting for months.
+
+_CLOSE_ENOUGH = 0.75  # boilerplate overlap at which two layouts are the same sender
+
+
+def _find_format(
+    db: Session, account_id: str, result: StatementFile
+) -> tuple[StatementFormat | None, str | None]:
+    """The saved format for this layout, and how it was matched ("exact" or "close").
+
+    An exact fingerprint is the normal case. The near match exists because a fingerprint is
+    all-or-nothing about boilerplate, and an agent that adds a line to its covering note has
+    not become a different agent — losing the saved mappings over that would hand the
+    operator back a format they had already taught.
+    """
+    if not result.fingerprint:
+        return None, None
+    saved = db.scalars(
+        select(StatementFormat).where(StatementFormat.account_id == account_id)
+    ).all()
+    for fmt in saved:
+        if fmt.fingerprint == result.fingerprint:
+            return fmt, "exact"
+    best, best_score = None, 0.0
+    for fmt in saved:
+        if fmt.shape != result.format or not fmt.sample:
+            continue
+        score = layout_similarity(result.sample, fmt.sample)
+        if score > best_score:
+            best, best_score = fmt, score
+    if best is not None and best_score >= _CLOSE_ENOUGH:
+        return best, "close"
+    return None, None
+
+
+def _apply_format(fmt: StatementFormat, result: StatementFile, props, cats) -> None:
+    """Rewrite an extraction's labels with what this account decided they mean.
+
+    Every id stored in the format is resolved against the caller's OWN categories and
+    properties here. The maps are JSONB and carry no foreign keys, so an id that no longer
+    exists — or never belonged to this account — resolves to nothing and the row simply stays
+    as the statement printed it, which is the same path a brand new label takes.
+    """
+    cat_by_id = {c.id: c for c in cats}
+    prop_by_id = {p.id: p for p in props}
+    cat_aliases = fmt.category_aliases or {}
+    prop_aliases = fmt.property_aliases or {}
+    overrides = {k.strip().lower(): v for k, v in (fmt.classification_overrides or {}).items()}
+
+    for ex in result.extractions:
+        # Look up what the statement PRINTED first, then what the parser made of it. The
+        # printed word is what the operator was shown and what they taught; the parser's own
+        # tidying ("Mgt Fee" → "Management Fee") is a second chance, not the first.
+        for key in (ex.raw_property_name, ex.property_name):
+            target = prop_by_id.get(prop_aliases.get((key or "").strip().lower(), ""))
+            if target is not None:
+                ex.property_name = target.name
+                break
+        for row in ex.rows:
+            raw = str(row.get("raw_category") or row.get("category", "")).strip()
+            row.setdefault("raw_category", raw)
+            for key in (raw, str(row.get("category", ""))):
+                target = cat_by_id.get(cat_aliases.get(key.strip().lower(), ""))
+                if target is not None:
+                    row["category"] = target.name
+                    break
+            override = overrides.get(str(row["category"]).strip().lower())
+            if override:
+                row["classification"] = override
+        if fmt.month_rule == "rent_period" and ex.alt_month is not None:
+            ex.month, ex.alt_month = ex.alt_month, ex.month
+
+
+def _note_format(
+    result: StatementFile, fmt: StatementFormat | None, match: str | None
+) -> None:
+    """Say which format was used, in the file-level notes the review screen already shows."""
+    if fmt is None:
+        if result.fingerprint:
+            result.warnings.append(
+                "This is a layout you haven't taught yet. Correct anything below that is "
+                "wrong, then save it as a format and the next statement from this sender "
+                "will come in already corrected."
+            )
+        return
+    if match == "close":
+        result.warnings.append(
+            f"Read using your saved format “{fmt.label}”. Its layout is close to, but not "
+            "identical to, the one you saved — check the rows below, and re-save the format "
+            "to record the new version."
+        )
+    else:
+        result.warnings.append(f"Read using your saved format “{fmt.label}”.")
+
+
+def _use_format(db: Session, fmt: StatementFormat | None) -> None:
+    if fmt is None:
+        return
+    fmt.times_used = (fmt.times_used or 0) + 1
+    fmt.last_used_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def _format_out(fmt: StatementFormat, props, cats) -> StatementFormatOut:
+    """A saved format resolved to NAMES. A list of UUIDs tells an operator nothing about what
+    the format will do to their next upload."""
+    cat_by_id = {c.id: c.name for c in cats}
+    prop_by_id = {p.id: p.name for p in props}
+    return StatementFormatOut(
+        id=fmt.id,
+        label=fmt.label,
+        shape=fmt.shape,
+        fingerprint=fmt.fingerprint,
+        month_rule=fmt.month_rule,
+        times_used=fmt.times_used or 0,
+        last_used_at=fmt.last_used_at,
+        category_aliases={
+            raw: cat_by_id[cid]
+            for raw, cid in (fmt.category_aliases or {}).items()
+            if cid in cat_by_id
+        },
+        property_aliases={
+            raw: prop_by_id[pid]
+            for raw, pid in (fmt.property_aliases or {}).items()
+            if pid in prop_by_id
+        },
+        classification_overrides=dict(fmt.classification_overrides or {}),
     )
 
 
@@ -164,9 +308,12 @@ async def extract_statement_pdf(
     db: Session = Depends(get_db),
     scope: Scope = Depends(get_scope),
 ):
-    """Parse a single PDF statement into a review preview. Writes nothing; reads locally
-    (heuristic, or a local Ollama model if one is running — both free) and flags anything
-    that must be created first. The UI applies the reviewed rows via ``POST /import/rows``."""
+    """Parse a single PDF statement into a review preview.
+
+    Reads locally — the rules, or a local Ollama model if one is running, both free — applies
+    any format you have already taught for this sender's layout, and flags anything that must
+    be created first. Nothing of yours is written: the only write is the saved format's own
+    usage counter. The UI applies the reviewed rows via ``POST /import/rows``."""
     name = (file.filename or "").lower()
     if not name.endswith(".pdf"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Please upload a .pdf statement.")
@@ -190,6 +337,12 @@ async def extract_statement_pdf(
             status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Could not read this PDF: {exc}"
         )
 
+    fmt, match = _find_format(db, scope.account_id, result)
+    if fmt is not None:
+        _apply_format(fmt, result, props, cats)
+    _note_format(result, fmt, match)
+    _use_format(db, fmt)
+
     preview = _resolve_preview(
         result.extractions[0],
         {p.name.strip().lower(): p for p in props},
@@ -200,6 +353,11 @@ async def extract_statement_pdf(
     # answered in part here. Say so rather than let the caller assume the file held one
     # property; extract-batch returns every one of them.
     preview.warnings = [*result.warnings, *preview.warnings]
+    preview.fingerprint = result.fingerprint
+    preview.sample = result.sample
+    preview.format_id = fmt.id if fmt else None
+    preview.format_label = fmt.label if fmt else None
+    preview.format_match = match
     if len(result.extractions) > 1:
         preview.warnings.insert(
             0,
@@ -259,6 +417,11 @@ async def extract_statements_batch(
             continue
         try:
             result = _extract_file(content, props, cats, settings)
+            fmt, match = _find_format(db, scope.account_id, result)
+            if fmt is not None:
+                _apply_format(fmt, result, props, cats)
+            _note_format(result, fmt, match)
+            _use_format(db, fmt)
             previews = [
                 _resolve_preview(ex, prop_by_name, cat_by_name, result.format)
                 for ex in result.extractions
@@ -273,6 +436,11 @@ async def extract_statements_batch(
                 format=result.format,
                 statements=len(previews),
                 warnings=result.warnings,
+                fingerprint=result.fingerprint,
+                sample=result.sample,
+                format_id=fmt.id if fmt else None,
+                format_label=fmt.label if fmt else None,
+                format_match=match,
             )
         )
 
@@ -312,6 +480,136 @@ async def extract_statements_batch(
         unknown_properties=list(unknown_props.values()),
         unknown_categories=list(unknown_cats.values()),
     )
+
+
+@router.get("/statement/formats", response_model=list[StatementFormatOut])
+def list_statement_formats(
+    db: Session = Depends(get_db),
+    scope: Scope = Depends(get_scope),
+):
+    """Every statement format this account has taught, most recently used first."""
+    props = db.scalars(select(Property).where(Property.account_id == scope.account_id)).all()
+    cats = db.scalars(select(Category).where(Category.account_id == scope.account_id)).all()
+    formats = db.scalars(
+        select(StatementFormat)
+        .where(StatementFormat.account_id == scope.account_id)
+        .order_by(StatementFormat.last_used_at.desc().nullslast(), StatementFormat.label)
+    ).all()
+    return [_format_out(f, props, cats) for f in formats]
+
+
+@router.post("/statement/formats", response_model=StatementFormatOut, status_code=status.HTTP_201_CREATED)
+def save_statement_format(
+    body: StatementFormatIn,
+    db: Session = Depends(get_db),
+    scope: Scope = Depends(get_scope),
+):
+    """Teach (or re-teach) the format of one sender's statements.
+
+    Called from the review screen once the operator has corrected it: the corrections are
+    what gets saved. Re-teaching the same layout MERGES into the saved format rather than
+    replacing it, so a month that only corrects one new charge doesn't drop everything
+    learned before it; an alias sent with no target removes that one mapping.
+
+    Every id is checked against this account's own categories and properties before it is
+    stored — the alias maps are JSONB and the database cannot do that check itself.
+    """
+    props = db.scalars(select(Property).where(Property.account_id == scope.account_id)).all()
+    cats = db.scalars(select(Category).where(Category.account_id == scope.account_id)).all()
+    prop_ids = {p.id for p in props}
+    cat_ids = {c.id for c in cats}
+
+    fmt = db.scalars(
+        select(StatementFormat).where(
+            StatementFormat.account_id == scope.account_id,
+            StatementFormat.fingerprint == body.fingerprint,
+        )
+    ).first()
+    if fmt is None:
+        fmt = StatementFormat(
+            account_id=scope.account_id,
+            fingerprint=body.fingerprint,
+            label=body.label.strip(),
+            shape=body.shape,
+            sample=body.sample,
+            category_aliases={},
+            property_aliases={},
+            classification_overrides={},
+        )
+        db.add(fmt)
+    else:
+        fmt.label = body.label.strip()
+        fmt.shape = body.shape
+        if body.sample:
+            fmt.sample = body.sample
+
+    categories = dict(fmt.category_aliases or {})
+    properties = dict(fmt.property_aliases or {})
+    overrides = dict(fmt.classification_overrides or {})
+
+    for alias in body.categories:
+        raw = alias.raw.strip().lower()
+        if not raw:
+            continue
+        if alias.target_id is None:
+            categories.pop(raw, None)
+        elif alias.target_id in cat_ids:
+            categories[raw] = alias.target_id
+        else:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Category {alias.target_id} does not belong to this account.",
+            )
+        # The override is keyed by the category the row ENDS UP as, so it survives the sender
+        # renaming its own label next month.
+        name = next((c.name for c in cats if c.id == alias.target_id), None)
+        key = (name or alias.raw).strip().lower()
+        if alias.classification:
+            overrides[key] = alias.classification
+        else:
+            overrides.pop(key, None)
+
+    for alias in body.properties:
+        raw = alias.raw.strip().lower()
+        if not raw:
+            continue
+        if alias.target_id is None:
+            properties.pop(raw, None)
+        elif alias.target_id in prop_ids:
+            properties[raw] = alias.target_id
+        else:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Property {alias.target_id} does not belong to this account.",
+            )
+
+    fmt.category_aliases = categories
+    fmt.property_aliases = properties
+    fmt.classification_overrides = overrides
+    fmt.month_rule = body.month_rule
+    db.commit()
+    db.refresh(fmt)
+    return _format_out(fmt, props, cats)
+
+
+@router.delete("/statement/formats/{format_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_statement_format(
+    format_id: str,
+    db: Session = Depends(get_db),
+    scope: Scope = Depends(get_scope),
+):
+    """Forget a format. The statements it was taught from are untouched; the next upload of
+    that layout is simply read as if it had never been seen."""
+    fmt = db.scalars(
+        select(StatementFormat).where(
+            StatementFormat.account_id == scope.account_id,
+            StatementFormat.id == format_id,
+        )
+    ).first()
+    if fmt is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No such statement format.")
+    db.delete(fmt)
+    db.commit()
 
 
 @router.get("/missing", response_model=list[MissingScope])

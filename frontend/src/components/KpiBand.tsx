@@ -14,12 +14,17 @@ export interface KpiData {
 // the prior month and a trailing-12 sparkline. Everything here is rendered straight off
 // the data returned by /portfolio/dashboard, which reads only portfolio_month_summary.
 
-type MetricKey = "gross_rent" | "operating_expenses" | "noi" | "cash_flow";
+type MetricKey = "gross_rent" | "operating_expenses" | "noi" | "debt_service" | "cash_flow";
 
+// In reading order, so the band tells the story the P&L does: rent in, operating costs out,
+// NOI, the loan, what's left. Debt service is here because it is usually the largest single
+// step between NOI and cash flow, and a band that jumped from one to the other left the
+// biggest number on the page unexplained.
 const KPIS: { key: MetricKey; label: string; expenseLike: boolean; color: string }[] = [
   { key: "gross_rent", label: "Gross Rent", expenseLike: false, color: CHART.rent },
   { key: "operating_expenses", label: "Operating Expenses", expenseLike: true, color: CHART.opex },
   { key: "noi", label: "NOI", expenseLike: false, color: CHART.noi },
+  { key: "debt_service", label: "Debt Service", expenseLike: true, color: CHART.debtService },
   { key: "cash_flow", label: "Cash Flow", expenseLike: false, color: CHART.cashFlow },
 ];
 

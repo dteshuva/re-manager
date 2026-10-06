@@ -41,9 +41,16 @@ prop = post("/properties", {"name": "ZZ Test Fourplex", "type": "multifamily", "
 single = post("/properties", {"name": "ZZ Test Cottage", "type": "single"})
 unit = post(f"/properties/{prop['id']}/units", {"unit_number": "A", "label": "Unit A"})
 print(f"   created property {prop['name']} + unit {unit['unit_number']}, and single {single['name']}")
+# A single-asset property holds exactly ONE unit, not none. The rule used to be "no units at
+# all", from when a single-let house booked everything at the property tier; that became wrong
+# once tenancies arrived, because a tenancy hangs off a unit (``lease.unit_id``) and so do the
+# rent roll, the rent schedule and the arrears balance — under the old rule a portfolio of houses
+# could never record a tenancy. The CAP is what still makes the property type mean something.
+r = client.post(f"/properties/{single['id']}/units", json={"unit_number": "1"}, headers=H)
+assert r.status_code == 201, r.text
 r = client.post(f"/properties/{single['id']}/units", json={"unit_number": "X"}, headers=H)
 assert r.status_code == 409, r.text
-print("   units rejected on single-asset property -> 409 OK")
+print("   single-asset property: one unit accepted, a second -> 409 OK")
 
 # Grab two seeded categories to build line items.
 cats = {c["name"]: c for c in client.get("/categories", headers=H).json()}

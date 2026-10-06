@@ -219,8 +219,34 @@ export interface TrendPoint {
   gross_rent: number;
   operating_expenses: number;
   noi: number;
+  debt_service: number;
   cash_flow: number;
   occupancy: number | null;
+}
+
+// What a property's headline figures are actually MADE OF. One operating-expense total says
+// money left the building; it doesn't say whether that was one boiler or twelve small bills.
+// Computed from the resolved line items, so it always reconciles with the KPI band above it.
+export interface CategoryAmount {
+  category_id: string;
+  category: string;
+  classification: Classification;
+  amount: number;
+}
+
+export interface PropertyCategoryBreakdown {
+  property_id: string;
+  period_from: string | null;
+  period_to: string | null;
+  rows: CategoryAmount[];
+}
+
+export function getPropertyCategories(
+  token: string,
+  propertyId: string,
+  range?: PeriodRange,
+): Promise<PropertyCategoryBreakdown> {
+  return getJson(token, `/properties/${propertyId}/categories${rangeQuery(range)}`);
 }
 
 export interface PortfolioDashboard {
@@ -252,7 +278,13 @@ export type AttentionType =
   // vacancy_min_occupancy_drop_pct). Absorbs the unit vacancies that caused it.
   | "occupancy_drop"
   | "high_vacancy"
-  | "missing_data";
+  | "missing_data"
+  // A tenancy carrying a material CUMULATIVE unpaid balance (migration 0025). A LEVEL
+  // signal, not a change: `magnitude`/`current` are the balance owed, `change` the movement
+  // into the flagged month, `prior` the balance carried in before it. Each unit is reported
+  // ONCE per feed, at its worst month — and a `rolled_up` arrears row is the TAIL ("N
+  // further units in arrears"), one per property, not a cluster of one shared event.
+  | "arrears";
 
 export interface AttentionItem {
   type: AttentionType;
@@ -369,6 +401,19 @@ export interface UnitRosterRow extends PnLMetrics {
   // `status` above (a historical per-month fact); see the Rent Roll tab for full detail.
   lease_status?: LeaseStatus | null;
   lease_tenant_name?: string | null;
+  // The tenancy's own rent schedule (migrations 0012/0024), so the property page can show and
+  // edit the three figures that change most — start date, last rent increase, rent — without
+  // sending you to the rent roll for them. Reference data: it never feeds the P&L metrics on
+  // this same row. All null when the unit has no tenancy on file.
+  lease_id?: string | null;
+  lease_contract_rent?: number | null;
+  lease_start?: string | null;
+  lease_end?: string | null; // null = periodic/rolling (no fixed term)
+  last_rent_increase_date?: string | null;
+  rent_before_increase?: number | null;
+  // Counts from the last increase, or from the tenancy start when the rent has never been
+  // raised — same rule as the rent roll's column of the same name.
+  months_since_last_increase?: number | null;
 }
 
 export interface UnitRoster {
@@ -858,18 +903,31 @@ export interface StatementRow {
   // for one the agent printed against this property.
   kind: "line" | "rent" | "allocated";
   note: string | null;
+  // The label exactly as the statement printed it, kept even after a saved format has
+  // renamed the row. Teaching a format records "this sender's word for that category", so
+  // the sender's word has to survive the renaming.
+  raw_category: string | null;
 }
 
+export type StatementShape = "single" | "rent_roll" | "sectioned";
+
 export interface StatementPreview {
-  backend: string; // "ollama" | "heuristic" | "rent_roll"
-  format: "single" | "rent_roll"; // the shape of the FILE this came from
+  backend: string; // "ollama" | "heuristic" | "rent_roll" | "sectioned"
+  format: StatementShape; // the shape of the FILE this came from
   detected_property: string | null;
+  // The property as the statement printed it, before it was matched to a stored one.
+  raw_property: string | null;
   property_id: string | null;
   property_unknown: boolean;
   detected_month: string | null; // YYYY-MM-01
   rows: StatementRow[];
   unknown_categories: string[];
   warnings: string[];
+  fingerprint: string;
+  sample: string;
+  format_id: string | null;
+  format_label: string | null;
+  format_match: "exact" | "close" | null;
 }
 
 export async function extractStatement(token: string, file: File): Promise<StatementPreview> {
@@ -907,9 +965,16 @@ export interface StatementBatchItem {
 // on every property card it produced.
 export interface StatementFileNote {
   filename: string;
-  format: "single" | "rent_roll";
+  format: StatementShape;
   statements: number;
   warnings: string[];
+  // The layout's identity, so the UI can offer to teach this sender's format, plus the saved
+  // format (if any) whose mappings were applied to this file's rows.
+  fingerprint: string;
+  sample: string;
+  format_id: string | null;
+  format_label: string | null;
+  format_match: "exact" | "close" | null;
 }
 
 export interface StatementBatchPreview {
@@ -935,6 +1000,56 @@ export async function extractStatementsBatch(
     throw new Error(data?.detail ? String(data.detail) : `Extraction failed (${res.status})`);
   }
   return data as StatementBatchPreview;
+}
+
+// ---- Saved statement formats (what one sender's words mean in this account) ----
+// The parser reads figures off the page without a template; a format is where the MEANINGS
+// live — that this agent's "Mgt Fee" is your "Management Fee", that "64 King Edward Street"
+// is the property you store as "64 King Edward St, Gateshead". Saved against a fingerprint
+// of the layout, applied to the next statement from the same sender, and always applied to
+// the REVIEW rather than to the import, so a stale mapping stays visible and one edit away.
+export interface StatementFormat {
+  id: string;
+  label: string;
+  shape: StatementShape;
+  fingerprint: string;
+  month_rule: "statement_period" | "rent_period" | null;
+  times_used: number;
+  last_used_at: string | null;
+  category_aliases: Record<string, string>; // raw label -> category NAME
+  property_aliases: Record<string, string>; // raw label -> property NAME
+  classification_overrides: Record<string, string>;
+}
+
+export interface StatementFormatAliasIn {
+  raw: string;
+  target_id: string | null;
+  classification?: Classification | null;
+}
+
+export interface StatementFormatIn {
+  fingerprint: string;
+  sample?: string;
+  label: string;
+  shape: StatementShape;
+  categories: StatementFormatAliasIn[];
+  properties: StatementFormatAliasIn[];
+  month_rule?: "statement_period" | "rent_period" | null;
+}
+
+export function listStatementFormats(token: string): Promise<StatementFormat[]> {
+  return getJson(token, "/import/statement/formats");
+}
+
+export function saveStatementFormat(
+  token: string,
+  body: StatementFormatIn,
+): Promise<StatementFormat> {
+  return request<StatementFormat>(token, "POST", "/import/statement/formats", body);
+}
+
+export function deleteStatementFormat(token: string, id: string): Promise<void> {
+  return request<void>(token, "DELETE", `/import/statement/formats/${id}`);
 }
 
 // ==================== Investment insights (acquisition inputs + returns) =====
@@ -1458,7 +1573,10 @@ export const LEASE_STATUSES: LeaseStatus[] = ["active", "notice", "expired", "va
 export type LeaseType = "fixed" | "mtm";
 
 export interface LeaseInput {
-  tenant_name: string;
+  // Optional (migration 0026): a tenancy recorded from agent statements often has no name on
+  // file, and nothing in the rent schedule or arrears math reads it. null/blank = not recorded,
+  // which the rent roll renders as "—".
+  tenant_name: string | null;
   start_date: string; // YYYY-MM-DD
   end_date: string | null; // null = month-to-month
   contract_rent: number;
@@ -1476,6 +1594,21 @@ export interface LeaseInput {
   // bridge line is built from this. MUST be carried through on every save (this is a
   // full-replace PATCH) or an edit to any other field would silently null it out.
   concession_monthly?: number | null;
+  // Periodic (rolling) tenancy rent history (migration 0024). An England-style tenancy has
+  // no end date and its rent rises in discrete steps on a stated date (section 13 / by
+  // agreement) rather than on a contractual percentage, so THESE are its schedule — not
+  // `escalation_pct`. `last_rent_increase_date` is when the current `contract_rent` took
+  // effect (null = never increased); `rent_before_increase` is what it replaced (null = not
+  // held; rejected without a date to attach it to).
+  last_rent_increase_date?: string | null; // YYYY-MM-DD
+  rent_before_increase?: number | null;
+  // Arrears balance brought forward at `start_date` (migration 0025) — debt predating this
+  // app's records. SIGNED: negative means the tenancy began in credit.
+  opening_arrears?: number | null;
+  // The month from which this tenancy's arrears are meaningful (YYYY-MM-01). null = from the
+  // beginning. Set it to exclude a HANDOVER month after a purchase, where rent apportioned at
+  // completion is indistinguishable from a tenant who underpaid.
+  arrears_from_month?: string | null;
 }
 
 export interface Lease extends LeaseInput {
@@ -1485,6 +1618,55 @@ export interface Lease extends LeaseInput {
   created_at: string;
   updated_at: string;
 }
+
+// ---- Arrears ledger (migration 0025) -------------------------------------------------
+// The MONTHLY basis behind the rent roll's accumulated balance: one block per tenancy, each
+// month's movement and the running balance after it. Nothing here is stored — it's derived on
+// read from the rent schedule and the actual collected rent, so a rent correction restates the
+// history immediately.
+export interface ArrearsMonth {
+  month: string;
+  rent_due: number; // NET of `concession` below — what was actually owed
+  rent_collected: number;
+  concession: number;
+  adjustments: number;
+  movement: number; // rent_due - rent_collected + adjustments
+  balance: number; // running total after this month; negative = in credit
+  // False for a month that appears only because an adjustment landed on it. Months with rent due
+  // but NO record don't appear at all — that's missing data, not debt.
+  has_record: boolean;
+  holdover: boolean;
+}
+
+export interface ArrearsLeaseLedger {
+  lease_id: string;
+  tenant_name: string | null;
+  lease_start: string;
+  lease_end: string | null;
+  status: LeaseStatus;
+  opening_arrears: number; // brought forward from before these records
+  arrears_from_month: string | null; // months before this are outside the measurement
+  months: ArrearsMonth[];
+  total_rent_due: number;
+  total_rent_collected: number;
+  total_concessions: number;
+  total_adjustments: number;
+  closing_balance: number;
+}
+
+export interface UnitArrears {
+  unit_id: string;
+  as_of: string;
+  current_lease_id: string | null;
+  // The CURRENT tenancy's balance — the figure the rent roll shows for this unit. Earlier
+  // tenancies keep their own balances in `leases`: a former tenant's debt doesn't vanish when
+  // they leave, it just stops being collectable from whoever is there now.
+  current_balance: number;
+  leases: ArrearsLeaseLedger[];
+}
+
+export const getUnitArrears = (t: string, unitId: string) =>
+  getJson<UnitArrears>(t, `/units/${unitId}/arrears`);
 
 export const listUnitLeases = (t: string, unitId: string) =>
   getJson<Lease[]>(t, `/units/${unitId}/leases`);
@@ -1552,6 +1734,43 @@ export interface RentRollRow {
   period_actual_rent: number | null;
   variance: number | null;
   variance_pct: number | null;
+  // Periodic-tenancy rent history (migration 0024). `months_since_last_increase` counts from
+  // `last_rent_increase_date`, or from `lease_start` when the rent has never been increased —
+  // on a rolling tenancy a rise is typically annual and no sooner, so a big number is a rent
+  // review that's overdue.
+  last_rent_increase_date: string | null;
+  rent_before_increase: number | null;
+  months_since_last_increase: number | null;
+  // The current lease's stored brought-forward arrears balance. Echoed here so the rent roll's
+  // full-replace lease editor can round-trip it rather than nulling it out on an unrelated
+  // edit. Already counted inside `arrears_balance` — this is the input, not a second total.
+  opening_arrears: number | null;
+  // ---- Arrears (migration 0025). Reference data; never feeds NOI/cash-flow. ----
+  // DERIVED, never stored: rent due − rent collected (+ adjustments) per month, accumulated
+  // over the TENANCY — the balance resets at each lease, since an outgoing tenant's debt is
+  // theirs. Only months with an actual record accrue (a month with no record is MISSING
+  // DATA, not debt); explicitly vacant months and standing concessions are excluded, because
+  // neither is rent anyone failed to pay.
+  //
+  // `arrears_balance` is the CUMULATIVE figure (everything owed as at `period_to`, including
+  // the lease's opening balance). `arrears_movement` is the MONTHLY figure for the rent
+  // roll's window alone, and `arrears_opening_balance + arrears_movement === arrears_balance`
+  // exactly. Negative means IN CREDIT throughout — deliberately not floored at zero.
+  //
+  // Zeros for a unit with no lease (no tenancy, nothing owed). All null for a shell unit.
+  // Echoed so the editor can round-trip it and the UI can say which month the balance starts
+  // from. null = measured from the beginning.
+  arrears_from_month: string | null;
+  arrears_balance: number | null;
+  arrears_opening_balance: number | null;
+  arrears_movement: number | null;
+  arrears_rent_due: number | null; // net of `arrears_concessions`
+  arrears_rent_collected: number | null;
+  arrears_concessions: number | null;
+  arrears_adjustments: number | null;
+  // The balance restated in months of the current rent — what makes £900 owed comparable
+  // between a £450 and an £1,800 door. Null when there's no priced month to divide by.
+  arrears_months_of_rent: number | null;
 }
 
 export interface OccupancySummary {
@@ -1581,6 +1800,23 @@ export interface RentVarianceRollup {
   unit_count: number;
 }
 
+// Property/portfolio arrears rollup for the rent roll's window (migration 0025). Excludes
+// shell units, same as `occupancy`/`rent_variance`. `total_balance` is the NET position
+// (credits net against debts — the real exposure); `units_in_arrears` is a HEADCOUNT of units
+// actually owing, which is the different question "how many doors do I have to chase".
+export interface ArrearsRollup {
+  total_balance: number;
+  total_movement: number;
+  total_rent_due: number;
+  total_rent_collected: number;
+  total_concessions: number;
+  total_adjustments: number;
+  units_in_arrears: number;
+  units_in_credit: number;
+  unit_count: number;
+  largest_balance: number | null;
+}
+
 export interface RentRoll {
   property_id: string | null; // null = portfolio-wide
   as_of: string;
@@ -1592,6 +1828,8 @@ export interface RentRoll {
   period_from: string | null;
   period_to: string | null;
   rent_variance: RentVarianceRollup | null;
+  // Arrears rollup over the SAME window. All-zero when the scope has no summarized months.
+  arrears: ArrearsRollup | null;
 }
 
 export function getPropertyRentRoll(
@@ -1687,7 +1925,7 @@ export interface LeaseExpirationItem {
   label: string | null;
   property_id: string;
   property_name: string;
-  tenant_name: string;
+  tenant_name: string | null;
   lease_end: string;
   contract_rent: number;
   months_to_expiry: number;

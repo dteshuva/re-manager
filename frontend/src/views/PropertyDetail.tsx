@@ -3,6 +3,7 @@ import {
   exportPropertyMonthly,
   exportPropertyVariance,
   getPropertyAttention,
+  getPropertyCategories,
   getPropertyDashboard,
   getPropertyMonthly,
   getPropertyUnitsMonthly,
@@ -10,6 +11,7 @@ import {
   getUnitRoster,
   listProperties,
   type AttentionFeed as AttentionFeedType,
+  type CategoryAmount,
   type ExportFormat,
   type PeriodRange,
   type PnLMetrics,
@@ -21,15 +23,19 @@ import {
   type UnitRoster,
 } from "../api";
 import AttentionFeed from "../components/AttentionFeed";
+import CategoryComposition from "../components/CategoryComposition";
 import ExportControl from "../components/ExportControl";
 import InvestmentPanel from "../components/InvestmentPanel";
+import RentModelPanel from "../components/RentModelPanel";
 import KpiBand from "../components/KpiBand";
 import PeriodSelector from "../components/PeriodSelector";
 import PnlTrendChart from "../components/PnlTrendChart";
 import PropertySearchSelect from "../components/PropertySearchSelect";
+import TenancyEditor from "../components/TenancyEditor";
 import UnitDetail from "../components/UnitDetail";
 import { clickableProps } from "../hooks/clickable";
-import { fmtCurrency, fmtMonth, isYoyComparison, leaseStatusPillClass, statusPillClass } from "../ui";
+import { t } from "../terms";
+import { fmtCurrency, fmtDate, fmtMonth, isYoyComparison, leaseStatusPillClass, statusPillClass } from "../ui";
 
 const ROSTER_PAGE = 25;
 
@@ -61,9 +67,16 @@ export default function PropertyDetail({
   // its end month; the monthly P&L over the range).
   const [range, setRange] = useState<PeriodRange>({});
   const [monthly, setMonthly] = useState<PropertyMonthlyPnL[]>([]);
+  // What the headline figures are made of, category by category, over the selected period.
+  const [categories, setCategories] = useState<CategoryAmount[]>([]);
   const [unitRows, setUnitRows] = useState<UnitMonthlyPnL[]>([]);
   const [openMonth, setOpenMonth] = useState<string | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<string | null>(null);
+  // Which roster row has its tenancy editor open (unit id), and a bump to force the roster to
+  // refetch after a save so the row shows the figure that was just stored rather than a stale
+  // client copy — the server is the only source of truth for these.
+  const [editingUnit, setEditingUnit] = useState<string | null>(null);
+  const [rosterReload, setRosterReload] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const unitPanelRef = useRef<HTMLDivElement>(null);
 
@@ -127,14 +140,20 @@ export default function PropertyDetail({
     getPropertyDashboard(token, propertyId, range).then((d) => !cancelled && setDashboard(d)).catch((e) => !cancelled && setError(e.message));
     getPropertyVariance(token, propertyId, range).then((v) => !cancelled && setVariance(v)).catch((e) => !cancelled && setError(e.message));
     getPropertyAttention(token, propertyId, range).then((f) => !cancelled && setFeed(f)).catch((e) => !cancelled && setError(e.message));
+    getPropertyCategories(token, propertyId, range).then((c) => !cancelled && setCategories(c.rows)).catch((e) => !cancelled && setError(e.message));
     return () => {
       cancelled = true;
     };
   }, [token, propertyId, range.from, range.to]);
 
-  // Unit roster (server-sorted/paginated) at the period's end month — multifamily only.
+  // Unit roster (server-sorted/paginated) at the period's end month.
+  //
+  // Deliberately NOT multifamily-only any more. A single-let house has exactly one unit, and
+  // that unit is where its tenancy, its rent schedule and its arrears live — so gating the
+  // roster on `type === "multifamily"` left a portfolio of houses with no way to see or edit
+  // any of it from this page. The roster degrades perfectly well to one row.
   useEffect(() => {
-    if (!propertyId || !isMulti) {
+    if (!propertyId) {
       setRoster(null);
       return;
     }
@@ -145,7 +164,7 @@ export default function PropertyDetail({
     return () => {
       cancelled = true;
     };
-  }, [token, propertyId, isMulti, range.to, sort, order, offset]);
+  }, [token, propertyId, range.to, sort, order, offset, rosterReload]);
 
   // Lower detail: month-by-month P&L over the selected range.
   useEffect(() => {
@@ -233,6 +252,18 @@ export default function PropertyDetail({
 
       {dashboard && <KpiBand data={dashboard} variance={variance} />}
 
+      {/* Rent model, given the same billing as the acquisition inputs beside it. Only for a
+          property with ONE unit: rent belongs to a tenancy and a tenancy to a unit, so on a
+          multifamily building "the rent" is ambiguous and the per-row editor in the unit roster
+          below is the honest surface. */}
+      {roster?.total === 1 && roster.rows[0] && (
+        <RentModelPanel
+          token={token}
+          unitId={roster.rows[0].unit_id}
+          onSaved={() => setRosterReload((n) => n + 1)}
+        />
+      )}
+
       {propertyId && <InvestmentPanel token={token} propertyId={propertyId} />}
 
       <h3 className="section-title">Needs attention</h3>
@@ -243,29 +274,44 @@ export default function PropertyDetail({
         />
       )}
 
-      {isMulti && roster && (
+      {roster && (
         <>
-          <h3 className="section-title">Unit roster</h3>
+          <h3 className="section-title">
+            {roster.total === 1 ? `Tenancy & rent` : "Unit roster"}
+          </h3>
           <p className="hint">
             {roster.total} units · showing {roster.rows.length} (page {Math.floor(offset / ROSTER_PAGE) + 1}
-            {" "}of {Math.max(1, Math.ceil(roster.total / ROSTER_PAGE))}). Click a header to sort. "Lease" is the
-            unit's current lease state (today) — a separate, live signal from the month's record-driven
-            "Status" column; see the Rent Roll tab for full lease detail.
+            {" "}of {Math.max(1, Math.ceil(roster.total / ROSTER_PAGE))}). Click a header to sort. "{t("Lease")}" is the
+            {`unit's current ${t("lease")} state (today) — a separate, live signal from the month's record-driven `}
+            {`"Status" column. `}
+            {`“Rent (agreed)” is what the ${t("lease")} says is owed; “Rent collected” is what came `}
+            in that month — the gap between them is what arrears measures. Start date, agreed rent
+            and last increase are editable here with “Edit rent”, and save to the same record the
+            {` Rent Roll tab reads, so a change shows in both. The Rent Roll has the rest of the `}
+            {`${t("lease")} (tenant, deposit, opening arrears).`}
           </p>
           <table className="data-table">
             <thead>
               <tr>
                 <th className="is-clickable" onClick={() => onSort("unit_number")}>Unit{sortArrow("unit_number")}</th>
                 <th className="is-clickable" onClick={() => onSort("status")}>Status{sortArrow("status")}</th>
-                <th>Lease</th>
-                <th className="is-clickable" onClick={() => onSort("gross_rent")}>Rent{sortArrow("gross_rent")}</th>
+                <th>{t("Lease")}</th>
+                {/* The tenancy's own schedule, next to the month's actuals. "Rent" below is
+                    what was COLLECTED that month; "Rent (agreed)" here is what the tenancy
+                    says is owed — the two are different questions and the gap between them is
+                    what arrears measures. */}
+                <th>Start date</th>
+                <th>Rent (agreed)</th>
+                <th>Last increase</th>
+                <th className="is-clickable" onClick={() => onSort("gross_rent")}>Rent collected{sortArrow("gross_rent")}</th>
                 <th className="is-clickable" onClick={() => onSort("noi")}>NOI{sortArrow("noi")}</th>
                 <th className="is-clickable" onClick={() => onSort("cash_flow")}>Cash Flow{sortArrow("cash_flow")}</th>
                 <th className="is-clickable" onClick={() => onSort("noi_change")}>NOI Δ vs prior{sortArrow("noi_change")}</th>
+                <th>Edit</th>
               </tr>
             </thead>
             <tbody>
-              {roster.rows.map((u) => (
+              {roster.rows.flatMap((u) => [
                 <tr key={u.unit_id} className="is-clickable" {...clickableProps(() => openUnit(u.unit_id))}>
                   <td>
                     Unit {u.unit_number}
@@ -275,7 +321,30 @@ export default function PropertyDetail({
                     <span className={statusPillClass(u.status)}>{u.status}</span>
                   </td>
                   <td>
-                    <span className={leaseStatusPillClass(u.lease_status ?? "vacant")}>{u.lease_status ?? "vacant"}</span>
+                    <span className={leaseStatusPillClass(u.lease_status ?? "vacant")}>
+                      {u.lease_status === "vacant" || u.lease_status == null ? t("vacant") : u.lease_status}
+                    </span>
+                  </td>
+                  <td>{u.lease_start ? fmtDate(u.lease_start) : "—"}</td>
+                  <td>
+                    {u.lease_contract_rent == null ? "—" : fmtCurrency(u.lease_contract_rent)}
+                    {u.lease_id && u.lease_end == null && (
+                      <div className="muted" style={{ fontSize: 11 }}>periodic</div>
+                    )}
+                  </td>
+                  <td>
+                    {u.lease_id == null ? (
+                      "—"
+                    ) : (
+                      <>
+                        {u.last_rent_increase_date ? fmtDate(u.last_rent_increase_date) : "never"}
+                        {u.months_since_last_increase != null && (
+                          <div className="muted" style={{ fontSize: 11 }}>
+                            {`${u.months_since_last_increase} mo ago`}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </td>
                   <td>{fmtCurrency(u.gross_rent)}</td>
                   <td>{fmtCurrency(u.noi)}</td>
@@ -283,8 +352,42 @@ export default function PropertyDetail({
                   <td className={u.noi_change == null ? "muted" : u.noi_change < 0 ? "value-negative" : "value-positive"}>
                     {u.noi_change == null ? "—" : `${u.noi_change > 0 ? "+" : ""}${fmtCurrency(u.noi_change)}`}
                   </td>
-                </tr>
-              ))}
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ padding: "2px 6px" }}
+                      // The row opens the unit drill-down on click, so this must not bubble.
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingUnit(editingUnit === u.unit_id ? null : u.unit_id);
+                      }}
+                      aria-expanded={editingUnit === u.unit_id}
+                    >
+                      {u.lease_id ? "Edit rent" : `Add ${t("lease")}`}
+                    </button>
+                  </td>
+                </tr>,
+                editingUnit === u.unit_id && (
+                  <tr key={`${u.unit_id}-edit`}>
+                    <td colSpan={10}>
+                      <TenancyEditor
+                        token={token}
+                        unitId={u.unit_id}
+                        unitLabel={`unit ${u.unit_number}${u.label ? ` — ${u.label}` : ""}`}
+                        onSaved={() => {
+                          setEditingUnit(null);
+                          // Refetch rather than patching local state: every other screen reads
+                          // the same stored tenancy, and showing a client-side guess here is how
+                          // two views start disagreeing.
+                          setRosterReload((n) => n + 1);
+                        }}
+                        onCancel={() => setEditingUnit(null)}
+                      />
+                    </td>
+                  </tr>
+                ),
+              ])}
             </tbody>
           </table>
           <div className="row" style={{ gap: 8, marginTop: 10 }}>
@@ -317,6 +420,9 @@ export default function PropertyDetail({
         </>
       )}
 
+      <h4 className="section-title" style={{ fontSize: 13 }}>What the expenses are made of</h4>
+      <CategoryComposition rows={categories} />
+
       <h4 className="section-title" style={{ fontSize: 13 }}>Monthly P&amp;L</h4>
       {isMulti && (
         <p className="hint">Click a month to see each unit's rent &amp; expenses for that month.</p>
@@ -328,7 +434,9 @@ export default function PropertyDetail({
             <th>Gross Rent</th>
             <th>Operating</th>
             <th>NOI</th>
-            <th>Below-NOI</th>
+            <th>Debt Service</th>
+            <th>Capex</th>
+            <th>Other</th>
             <th>Cash Flow</th>
           </tr>
         </thead>
@@ -370,7 +478,7 @@ export default function PropertyDetail({
           })}
           {monthly.length === 0 && !error && (
             <tr className="row-empty">
-              <td colSpan={6}>No data in this period.</td>
+              <td colSpan={8}>No data in this period.</td>
             </tr>
           )}
         </tbody>
@@ -387,13 +495,18 @@ function periodLabel(d: { period_from: string | null; period_to: string | null }
     : `${fmtMonth(d.period_from)} – ${fmtMonth(d.period_to)}`;
 }
 
+// Below-NOI used to be one column. It mixes a mortgage payment, a roof and everything else,
+// which are three different decisions — so it is three columns, and the row still adds up:
+// NOI − debt service − capex − other = cash flow.
 function Cells({ m }: { m: PnLMetrics }) {
   return (
     <>
       <td>{fmtCurrency(m.gross_rent)}</td>
       <td>{fmtCurrency(m.operating_expenses)}</td>
       <td>{fmtCurrency(m.noi)}</td>
-      <td>{fmtCurrency(m.below_noi)}</td>
+      <td>{fmtCurrency(m.debt_service)}</td>
+      <td>{fmtCurrency(m.capex)}</td>
+      <td>{fmtCurrency(m.other_below_line)}</td>
       <td className={m.cash_flow < 0 ? "value-negative" : undefined}>{fmtCurrency(m.cash_flow)}</td>
     </>
   );

@@ -5,7 +5,7 @@ everything. This computes a ranked list of "what needs attention this month?", e
 from the pre-aggregated rollups (``property_month_summary`` / ``property_category_month_summary``)
 — never from raw line items at request time — so it stays fast across thousands of units.
 
-Six detectors (the ones computable from existing data):
+Seven detectors (the ones computable from existing data):
   * noi_drop      — property NOI fell vs prior month past both $ and % floors.
   * expense_spike — a single operating category materially above its own trailing-3-month
                     average (both $ and % floors).
@@ -22,6 +22,12 @@ Six detectors (the ones computable from existing data):
                     ONE row (``_fold_vacancies_into_occupancy_drops``). Distinct from
                     ``high_vacancy``, which is a LEVEL check (very empty right now, even if
                     unchanged); the two are deduped.
+  * arrears       — a tenancy carrying a material CUMULATIVE unpaid balance (migration 0025).
+                    The one detector that is not computed from the rollups alone: a balance is
+                    rent DUE (the lease schedule) against rent COLLECTED, accumulated over the
+                    tenancy, so it runs ONCE per request over the whole period rather than per
+                    month, reports each unit at its worst month, and is never rolled up. See
+                    ``_arrears`` for each of those three decisions.
   * missing_data  — either a whole property with a prior-month rollup but none for the
                     selected month (``_missing_data``), or, within a property that DID post
                     data, individual units with no record at all this month
@@ -39,6 +45,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app import queries
 from app.queries import _tag_where, latest_actual_month
 
 # Currency symbol used by _money() when building the human-readable feed labels. Set per
@@ -48,12 +55,30 @@ from app.queries import _tag_where, latest_actual_month
 _currency_symbol: ContextVar[str] = ContextVar("attention_currency_symbol", default="$")
 CURRENCY_SYMBOLS = {"USD": "$", "GBP": "£"}
 
+# UK/US vocabulary for the feed's own sentences, carried the same way and set from the same
+# lookup as the symbol above, so the two can never disagree. A British landlord's empty flat is
+# a VOID, not a vacancy — and these labels are the feed's entire user-facing text, so leaving
+# them in US English would undo the rest of the localisation. Same convention as the frontend's
+# terms.ts: the currency IS the region signal, and only LABELS change — never a field name, a
+# detector, or a number.
+_uk_terms: ContextVar[bool] = ContextVar("attention_uk_terms", default=False)
+_TERMS = {
+    True: {"vacant": "void", "vacancy": "voids", "went_vacant": "became void"},
+    False: {"vacant": "vacant", "vacancy": "vacancy", "went_vacant": "went vacant"},
+}
+
+
+def _term(key: str) -> str:
+    return _TERMS[_uk_terms.get()][key]
+
 
 def _set_currency_symbol(db: Session, account_id: str) -> None:
+    """Set the per-request currency symbol AND vocabulary for this account's feed labels."""
     code = db.execute(
         text("SELECT currency FROM accounts WHERE id = :id"), {"id": account_id}
     ).scalar()
     _currency_symbol.set(CURRENCY_SYMBOLS.get(code, "$"))
+    _uk_terms.set(code == "GBP")
 
 
 @dataclass
@@ -70,6 +95,11 @@ class Thresholds:
     vacancy_high_absolute_pct: float
     # Root-cause linking ratio (global engine tunable, not per-account). See config.
     reconcile_ratio: float = 0.8
+    # Arrears triggers (migration 0025), also global rather than per-account columns — see
+    # config.py for why these are OR'd rather than AND'd like every threshold above.
+    arrears_min_balance: float = 500.0
+    arrears_min_months: float = 1.0
+    arrears_max_items: int = 10
 
     # Per-account columns in attention_settings (reconcile_ratio is config-sourced, not here).
     _FIELDS = (
@@ -87,6 +117,9 @@ class Thresholds:
         return cls(
             **{f: getattr(s, f"attention_{f}") for f in cls._FIELDS},
             reconcile_ratio=s.attention_noi_expense_reconcile_ratio,
+            arrears_min_balance=s.attention_arrears_min_balance,
+            arrears_min_months=s.attention_arrears_min_months,
+            arrears_max_items=s.attention_arrears_max_items,
         )
 
     @classmethod
@@ -105,9 +138,13 @@ class Thresholds:
         ).mappings().first()
         if row is None:
             return cls.from_settings()
+        settings = get_settings()
         return cls(
             **{f: float(row[f]) for f in cls._FIELDS},
-            reconcile_ratio=get_settings().attention_noi_expense_reconcile_ratio,
+            reconcile_ratio=settings.attention_noi_expense_reconcile_ratio,
+            arrears_min_balance=settings.attention_arrears_min_balance,
+            arrears_min_months=settings.attention_arrears_min_months,
+            arrears_max_items=settings.attention_arrears_max_items,
         )
 
 
@@ -294,10 +331,40 @@ def _all_unit_vacancies(
             "unit_id": r["uid"], "unit_number": r["num"], "category": None,
             "magnitude": lost, "current": 0.0, "prior": lost, "change": -lost,
             "pct_change": None, "detail": {"units_lost": 1},
-            "label": f"Unit {r['num']} went vacant, lost rent {_money(lost)}",
+            "label": f"Unit {r['num']} {_term('went_vacant')}, lost rent {_money(lost)}",
         })
     return out
 
+
+
+# A single-let property may book its rent at the PROPERTY tier, and every statement parser
+# does — a landlord statement names a property, not a flat, and ``/import/rows`` documents a
+# blank unit as meaning exactly that. The property's one unit then has no ``unit_month_summary``
+# row for the month, which is a fact about where the rent was filed and not about whether it
+# arrived. Read literally, "this unit posted nothing" is true and useless: it fires every month
+# the owner imports a statement, for a tenant who paid in full.
+#
+# So the missing-data detectors ask one more question before accusing a unit of silence — did
+# its property record the month at the other tier? Only for a property with ONE unit, where
+# there is no ambiguity about whose rent it is. Migration 0029 taught the occupancy count the
+# same thing; this is the same rule at the unit grain.
+#
+# Deliberately NOT applied to the vacancy detectors below. Those require an explicitly posted
+# vacant record, which is the operator stating that the unit is empty — a figure filed at the
+# property tier is no reason to overrule them.
+_SOLE_UNIT_PROPERTY_TIER_RENT = """
+            NOT EXISTS (
+                SELECT 1 FROM v_monthly_pnl v
+                WHERE v.property_id = u.property_id
+                  AND v.month = :month
+                  AND v.unit_id IS NULL
+                  AND v.gross_rent > 0
+                  AND (
+                      SELECT count(*) FROM units u2
+                      WHERE u2.property_id = u.property_id AND NOT u2.is_shell
+                  ) = 1
+            )
+"""
 
 def _all_unit_missing_data(
     db: Session, account_id: str, month: date, tags: list[str] | None = None
@@ -328,6 +395,7 @@ def _all_unit_missing_data(
                   SELECT 1 FROM property_month_summary pms
                   WHERE pms.property_id = u.property_id AND pms.month = :month
               )
+              AND {_SOLE_UNIT_PROPERTY_TIER_RENT}
               AND {_tag_where("u.property_id")}
             """
         ),
@@ -342,6 +410,178 @@ def _all_unit_missing_data(
             "magnitude": at_risk, "current": None, "prior": at_risk, "change": None,
             "pct_change": None, "detail": {"at_risk_basis": "prior_month_rent"},
             "label": f"Unit {r['num']} has no posted record this month",
+        })
+    return out
+
+
+def _arrears(
+    db: Session,
+    account_id: str,
+    date_from: date,
+    date_to: date,
+    t: Thresholds,
+    tags: list[str] | None = None,
+    property_id: str | None = None,
+) -> list[dict]:
+    """Arrears detector (migration 0025): tenancies carrying a material unpaid balance.
+
+    Three things make this detector structurally unlike the six above it, each for a reason:
+
+    1. **It runs ONCE for the whole period, not once per month.** An arrears balance is
+       cumulative, so computing it means walking each tenancy's entire history (see
+       ``queries.arrears_by_month``); doing that inside the feed's month loop would repeat the
+       same walk for every month of a YTD or trailing-12 window. Items therefore carry their
+       own ``month`` already, and the caller must NOT overwrite it.
+
+    2. **One item per unit, at its WORST month in the period.** This is a LEVEL detector, like
+       ``high_vacancy``: a tenant £1,800 down who stays £1,800 down is one problem, not one
+       problem per month. Reporting it monthly would let a single debtor occupy twelve of the
+       feed's rows and crowd out everything else. ``detail.months_over_threshold`` says how
+       long it has been going on, which is the part the repetition was really conveying.
+       A unit with NO month inside the window falls back to its standing position at
+       ``date_to`` (``final_positions``), dated to the month the debt last moved — a
+       cumulative balance can't be allowed to vanish because the requested window happens to
+       hold no unit records, which is precisely what the DEFAULT single-month feed hits
+       whenever the property rollups run ahead of the unit ones.
+
+    3. **The worst N are named; the tail is grouped per property.** Deliberately NOT the
+       magnitude-clustering roll-up every other unit-grain detector uses
+       (``_rollup_by_property``): that one exists because a building-wide event — one rent cut
+       applied to every door — genuinely IS one event, whereas four tenants who each owe ~£900
+       are four separate tenancies to chase and collapsing them on magnitude similarity would
+       assert a shared cause that isn't there. But a standing balance qualifies EVERY month it
+       goes unpaid, so a portfolio with a long tail of small debts would fill all 50 feed slots
+       with arrears and bury the NOI drops and vacancies completely. So the top
+       ``arrears_max_items`` debtors are named individually (door number and tenant — what you
+       need to act), and everything below that becomes one row per property carrying the count
+       and the total, which is the useful shape for a tail anyway.
+
+    The threshold is OR, not AND (see ``config.attention_arrears_min_balance``): a big absolute
+    debt matters whatever the rent, and a tenant a full month down matters even on a cheap
+    door. Credit balances (negative) never qualify — nothing is owed.
+    """
+    by_month, final_positions = queries.arrears_by_month(
+        db, account_id, date_from, date_to, tags=tags, property_id=property_id
+    )
+    worst: dict[str, dict] = {}
+    over_count: dict[str, int] = {}
+
+    def _qualifies(e: dict) -> float | None:
+        """The balance in months of its own rent, or None when this entry isn't material.
+        OR, not AND — see the docstring and config.attention_arrears_min_balance."""
+        months_of_rent = (e["balance"] / e["rent_due"]) if e["rent_due"] else None
+        if e["balance"] >= t.arrears_min_balance or (
+            months_of_rent is not None and months_of_rent >= t.arrears_min_months
+        ):
+            return months_of_rent if months_of_rent is not None else 0.0
+        return None
+
+    for month, entries in by_month.items():
+        for e in entries:
+            months_of_rent = _qualifies(e)
+            if months_of_rent is None:
+                continue
+            uid = e["unit_id"]
+            over_count[uid] = over_count.get(uid, 0) + 1
+            # Ties (a flat balance across several months) resolve to the EARLIEST such month:
+            # that's when the problem reached this level, which is the more useful date than
+            # the last month it happened to still be true.
+            best = worst.get(uid)
+            if best is None or e["balance"] > best["balance"] or (
+                e["balance"] == best["balance"] and month < best["month"]
+            ):
+                worst[uid] = {**e, "months_of_rent": months_of_rent}
+
+    # Standing debt the window itself couldn't see (see decision 2 in the docstring).
+    in_window = set(worst)
+    for uid, e in final_positions.items():
+        if uid in worst:
+            continue
+        months_of_rent = _qualifies(e)
+        if months_of_rent is None:
+            continue
+        worst[uid] = {**e, "months_of_rent": months_of_rent}
+
+    ranked = sorted(worst.items(), key=lambda kv: kv[1]["balance"], reverse=True)
+    named, tail = ranked[: t.arrears_max_items], ranked[t.arrears_max_items :]
+
+    out = []
+    for uid, e in named:
+        months_txt = (
+            f" (~{e['months_of_rent']:.1f} months' rent)" if e["months_of_rent"] is not None else ""
+        )
+        out.append({
+            "type": "arrears",
+            "property_id": e["property_id"],
+            "property_name": e["property_name"],
+            "unit_id": uid,
+            "unit_number": e["unit_number"],
+            "category": None,
+            "month": e["month"],
+            "magnitude": e["balance"],
+            "current": e["balance"],
+            # The balance this tenancy was already carrying before the flagged month — so the
+            # row shows whether the debt arrived in one month or built up over many.
+            "prior": e["balance"] - e["movement"],
+            "change": e["movement"],
+            "pct_change": None,
+            "detail": {
+                "tenant_name": e["tenant_name"],
+                "lease_id": e["lease_id"],
+                "rent_due": e["rent_due"],
+                "rent_collected": e["rent_collected"],
+                "months_of_rent": e["months_of_rent"],
+                # How many months INSIDE the window this unit was over threshold. For a
+                # carried-forward item the window saw none of them, so the count is
+                # meaningless there and `carried_forward` says so rather than reporting a
+                # misleading zero.
+                "months_over_threshold": over_count.get(uid) if uid in in_window else None,
+                "carried_forward": uid not in in_window,
+            },
+            "label": (
+                f"Unit {e['unit_number']} in arrears {_money(e['balance'])}{months_txt}"
+                # The tenant's name is optional (migration 0026) — omit the clause entirely
+                # rather than printing a dangling "— None".
+                + (f" — {e['tenant_name']}" if e["tenant_name"] else "")
+            ),
+        })
+
+    # The tail: one summary row per property. `month` is the LATEST month any of its members
+    # was flagged in — the row's claim is about the position as at that month, not about a
+    # single shared event.
+    by_property: dict[str, list[dict]] = {}
+    for _uid, e in tail:
+        by_property.setdefault(e["property_id"], []).append(e)
+    for pid, group in by_property.items():
+        total = sum(e["balance"] for e in group)
+        n = len(group)
+        doors = sorted((e["unit_number"] for e in group), key=lambda u: (len(u), u))[:12]
+        out.append({
+            "type": "arrears",
+            "property_id": pid,
+            "property_name": group[0]["property_name"],
+            "unit_id": None,
+            "unit_number": None,
+            "category": None,
+            "month": max(e["month"] for e in group),
+            "magnitude": total,
+            "current": total,
+            "prior": None,
+            "change": None,
+            "pct_change": None,
+            "detail": {
+                "rolled_up": True,
+                "count": n,
+                "total_magnitude": total,
+                "avg_magnitude": total / n,
+                "unit_numbers": doors,
+                "unit_numbers_more": max(n - len(doors), 0),
+            },
+            "label": (
+                f"{n} further unit{'s' if n != 1 else ''} in arrears, {_money(total)} total"
+            ),
+            "rolled_up": True,
+            "count": n,
         })
     return out
 
@@ -554,7 +794,10 @@ def _high_vacancies(
                     "vacant_units": vacant, "total_units": total,
                     "occupancy": float(r["occ"]) * 100.0, "vacancy_rate": vac_pct,
                 },
-                "label": f"High vacancy: {vac_pct:.0f}% vacant ({occupied}/{total} occupied)",
+                "label": (
+                    f"High {_term('vacancy')}: {vac_pct:.0f}% {_term('vacant')} "
+                    f"({occupied}/{total} occupied)"
+                ),
             }
         )
     return items
@@ -689,6 +932,9 @@ def attention_feed(
         for it in batch:
             it["month"] = month
         items += batch
+    # Arrears runs ONCE over the whole period, outside the loop, and tags its own months —
+    # see `_arrears` for why a cumulative balance can't be a per-month detector.
+    items += _arrears(db, account_id, date_from, date_to, t, tags=tags)
     items = _link_vacancy_to_noi_drop(items)
     items = _link_noi_to_expense(items, t.reconcile_ratio)
     items.sort(key=lambda it: it["magnitude"], reverse=True)
@@ -955,7 +1201,7 @@ def _unit_vacancies(db: Session, account_id: str, pid: str, name: str, month: da
             "unit_id": r["uid"], "unit_number": r["num"], "category": None,
             "magnitude": lost, "current": 0.0, "prior": lost, "change": -lost,
             "pct_change": None, "detail": {"units_lost": 1},
-            "label": f"Unit {r['num']} went vacant, lost rent {_money(lost)}",
+            "label": f"Unit {r['num']} {_term('went_vacant')}, lost rent {_money(lost)}",
         })
     return out
 
@@ -979,6 +1225,9 @@ def _unit_missing_data(db: Session, account_id: str, pid: str, name: str, month:
             LEFT JOIN unit_month_summary cur ON cur.unit_id = u.id AND cur.month = :month
             WHERE u.property_id = :pid AND prev.prev_rent > 0 AND cur.unit_id IS NULL
               AND p.account_id = :account_id
+              AND """
+            + _SOLE_UNIT_PROPERTY_TIER_RENT
+            + """
             """
         ),
         {"pid": pid, "month": month, "account_id": account_id},
@@ -1058,7 +1307,10 @@ def _make_rollup_item(cluster: list[dict], kind: str) -> dict:
     if kind == "noi_drop":
         label = f"{n} units NOI fell ~{_money(avg_mag)}{pct_txt} vs prior month"
     elif kind == "vacancy":
-        label = f"{n} units went vacant, lost ~{_money(avg_mag)} each (total {_money(total_mag)})"
+        label = (
+            f"{n} units {_term('went_vacant')}, lost ~{_money(avg_mag)} each "
+            f"(total {_money(total_mag)})"
+        )
     elif kind == "expense_spike":
         label = f"{n} units' operating expenses up ~{_money(avg_mag)}{pct_txt} vs 3-mo avg"
     elif kind == "missing_data":
@@ -1212,6 +1464,9 @@ def property_attention(
         for it in batch:
             it["month"] = month
         items += batch
+    # Same once-per-period arrears pass as the portfolio feed, scoped to this property — kept
+    # in both so a unit's unpaid balance surfaces wherever the operator is looking.
+    items += _arrears(db, account_id, date_from, date_to, t, property_id=property_id)
     items.sort(key=lambda it: it["magnitude"], reverse=True)
     return {
         "period_from": date_from,

@@ -35,6 +35,20 @@ and everything else — NOI, cash flow, rollups, variance, return metrics — is
 - **Rent roll and leases.** Full tenancy history per unit — term, contract rent, escalations,
   security deposits, concessions, percentage rent for retail — plus lease-expiration horizons
   for rollover risk and a **rent waterfall** bridging market rent to cash actually collected.
+- **Periodic tenancies.** An English tenancy rolls on with no end date, and its rent rises in
+  discrete steps on a stated date rather than by a contractual percentage. So a tenancy records
+  when the rent last went up and what it was before — which is what lets the months *before* an
+  increase be priced at the rent that was actually in force then, and what turns "14 months
+  since the last review" into a figure you can sort on.
+- **Rent arrears, monthly and accumulated.** Who owes money, how much it has built up to, and
+  what moved this month. **Derived, never stored** — rent due against rent collected,
+  accumulated over the tenancy — so a tenant who pays double next month clears their own balance
+  with no "mark as settled" step to forget, and a correction to the rent restates the history
+  immediately. The balance resets at each tenancy (an outgoing tenant's debt is theirs, not the
+  next tenant's), paying ahead reads as credit rather than a floored zero, and the four things
+  that merely *look* like unpaid rent — a month nobody has entered yet, an empty unit, a
+  discount the landlord granted, a debt written off — are each kept out of it. Brought-forward
+  balances and write-offs are the only figures anyone types.
 - **Budget vs. actual.** A flat annual plan per property, with variance against actuals at
   property and portfolio level.
 - **Compliance tracking.** Statutory certificates (EICR, Gas/CP12, EPC, HMO and selective
@@ -76,10 +90,21 @@ The parts I'm most happy with — where a design decision does real work:
   operating — is a single `UPDATE` that instantly recomputes NOI across all history. No
   migration, no touched data.
 
-- **A hard line between reference data and the math.** Leases, market rents, budgets and shell
-  flags are *reference* data: they inform reporting but **never** feed NOI or cash flow, which
-  stay driven solely by recorded line items. That invariant is what lets the rent roll and the
-  waterfall be rich and opinionated without any risk of contaminating the financials.
+- **A hard line between reference data and the math.** Leases, market rents, budgets, arrears
+  and shell flags are *reference* data: they inform reporting but **never** feed NOI or cash
+  flow, which stay driven solely by recorded line items. That invariant is what lets the rent
+  roll and the waterfall be rich and opinionated without any risk of contaminating the
+  financials. An arrears write-off moves a balance someone is being chased for and moves the
+  P&L not at all; booking it as bad-debt expense too is a line item, entered as one.
+
+- **Arrears falls out of two numbers already on file.** Rent due is the lease's own schedule and
+  rent collected is the recorded line items, so the balance is a running sum of their difference
+  — no second ledger to drift out of agreement with the first, and nothing extra to enter each
+  month. The design work was all in what *doesn't* count: a month with no record is missing
+  data, not debt (otherwise every un-entered month in the portfolio becomes fictional arrears at
+  once); an explicitly vacant month is vacancy loss; a granted concession is not a failure to
+  pay. Each exclusion is the same distinction the rent waterfall already draws, reused rather
+  than re-decided.
 
 - **Tenant isolation with one choke point.** Rather than trusting every query to remember its
   `account_id`, ownership is resolved through a single module of scoped resolvers, backed by
@@ -163,6 +188,8 @@ line_items ──► v_line_item_resolved ──► v_monthly_pnl ──► v_po
                      ├──► attention feed  +  investment metrics
                      └──► budget variance  +  rent waterfall
                                     ▲
+                     └──► rent arrears (rent due vs. collected, accumulated per tenancy)
+                                    ▲
       lease / market rent / budgets ─┘   (reference data — never feeds NOI or cash flow)
 ```
 
@@ -173,5 +200,7 @@ enforced underneath by composite foreign keys.
 `monthly_records`, `line_items`, `period_status` (the workflow), `audit_log`. **Plus** the
 reference/config tier: `property_investment`, `portfolio_acquisition` (bulk purchases, whose
 allocated shares are written down onto `property_investment` so every metric reads one place),
-`property_budget`, `property_tag`, `property_certificate`, and per-account `attention_settings`. The interactive API reference
+`property_budget`, `property_tag`, `property_certificate`, `arrears_adjustment` (write-offs and
+non-rent charges — the only stored input to an otherwise derived arrears balance), and
+per-account `attention_settings`. The interactive API reference
 (FastAPI / Swagger) is served at `/docs`.

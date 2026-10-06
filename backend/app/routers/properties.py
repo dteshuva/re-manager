@@ -1,7 +1,7 @@
 """CRUD for properties and their units."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -105,11 +105,27 @@ def create_unit(
     scope: Scope = Depends(get_scope),
 ):
     prop = get_property_or_404(db, scope, property_id)
+    # A 'single' property may hold exactly ONE unit, not none.
+    #
+    # The original rule was "multifamily only", from when a single-let house booked everything at
+    # the property tier and a unit would have been pure noise. That stopped being true once
+    # tenancies arrived: a tenancy hangs off a unit (``lease.unit_id``), and so therefore do the
+    # rent roll, the rent schedule and the whole arrears balance. Under the old rule a portfolio
+    # of houses could never record a tenancy at all — the API refused the one unit each of them
+    # needs. The cap is what preserves the original intent: it still prevents carving a building
+    # into forty flats while calling it 'single', which is what the property TYPE is for.
     if prop.type != "multifamily":
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail="Units can only be added to multifamily properties.",
+        existing = db.scalar(
+            select(func.count()).select_from(Unit).where(Unit.property_id == property_id)
         )
+        if existing:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail=(
+                    "A single-let property holds one unit (its own dwelling). Change the "
+                    "property's type to multifamily to add more."
+                ),
+            )
     unit = Unit(property_id=property_id, **payload.model_dump())
     db.add(unit)
     try:
