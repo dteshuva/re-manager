@@ -977,6 +977,10 @@ export interface StatementFileNote {
   format_id: string | null;
   format_label: string | null;
   format_match: "exact" | "close" | null;
+  // Do the rows read add up to the totals the statement prints? "mismatch" usually means the
+  // layout was misread; such a file's statements are held until reviewed.
+  check: "matched" | "mismatch" | "unverified";
+  check_notes: string[];
 }
 
 export interface StatementBatchPreview {

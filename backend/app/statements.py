@@ -547,6 +547,9 @@ class _RollRow:
     end: date | None
     note: str  # anything the label carried besides the address ("awaiting Benefit")
     period: str  # the period text as printed, for the warning that quotes it
+    # Further payments for the same property on their own lines ("29/6/26 to 28/8/26 697.00"),
+    # already added into ``rent``.
+    extra: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -569,6 +572,15 @@ class StatementFile:
     # so the same file fingerprints the same whoever uploads it. See :func:`fingerprint`.
     fingerprint: str = ""
     sample: str = ""
+    # Whether what was read adds up to the totals the statement PRINTS — see
+    # :func:`_check_totals`. "matched": every printed total found agrees; "mismatch": at least
+    # one disagrees (the layout was probably misread — this is what triggers a fallback);
+    # "unverified": the statement printed no total this could find. ``check_notes`` says which.
+    check: str = "unverified"
+    check_notes: list[str] = field(default_factory=list)
+    # A parser that reconciled against totals the text check can't see (a grand-totals ROW
+    # in a column layout) reports its own verdict here: "matched" / "mismatch" / None.
+    parser_check: str | None = None
 
 
 def _money(x: float) -> str:
@@ -762,6 +774,16 @@ def _parse_rent_roll(
                 repaired += fixed
             label = (label[: pm.start()] + " " + label[pm.end():]).strip(" ,.-:")
 
+        # A line that is ONLY a period and an amount continues the property above it — a
+        # second payment for the same house ("125 Allendale Road  24/7 to 28/7  101.34" then
+        # "29/6/26 to 28/8/26  697"). Read as a nameless line it became a portfolio charge
+        # and was spread across every property as an expense.
+        if not label and period and rows:
+            prev = rows[-1]
+            prev.rent = round(prev.rent + amount, 2)
+            prev.extra.append(f"{period} {_money(amount)}")
+            continue
+
         known = _match_known_property(label, known_properties)
         address, note = _split_address(label)
         if known or address:
@@ -926,6 +948,12 @@ def _build_rent_roll(
         ]
         if r.note:
             ex.warnings.append(f"The statement notes “{r.note}” against this property.")
+        if r.extra:
+            ex.warnings.append(
+                f"The rent includes a further line for this property: {'; '.join(r.extra)} "
+                f"(total {_money(r.rent)})."
+            )
+            ex.rows[0]["note"] = "; ".join(x for x in (r.note, *r.extra) if x)
         if month and r.month and r.month != month:
             # Posted with the rest of the statement, but say so — this is the one place the
             # parser overrides what the row itself said.
@@ -1555,12 +1583,18 @@ def _build_sectioned(
                     )
 
     # ---- reconcile against the statement's own grand totals ----------------------------
-    warnings.insert(0, _reconcile_sectioned(parsed, file_totals, rent_total, charge_totals, sign))
+    recon = _reconcile_sectioned(parsed, file_totals, rent_total, charge_totals, sign)
+    warnings.insert(0, recon)
     if statement_month is None:
         warnings.append(
             "Could not read the statement's period — set the month for each property below."
         )
-    return StatementFile(format="sectioned", extractions=extractions, warnings=warnings)
+    return StatementFile(
+        format="sectioned",
+        extractions=extractions,
+        warnings=warnings,
+        parser_check="mismatch" if recon.startswith("⚠") else ("matched" if "Matches" in recon else None),
+    )
 
 
 def _reconcile_sectioned(
@@ -2217,6 +2251,20 @@ def _extract_single(
             order.append(key)
     ex.rows = [merged[k] for k in order]
 
+    # Expenses are stored POSITIVE (NOI = rent - operating), so a statement that prints its
+    # charges as negatives ("Management -166.50") would otherwise RAISE NOI by every charge.
+    # Same rule as the multi-property parsers: decided from the document, flipped only when
+    # its charges are overwhelmingly negative, which leaves a genuine credit negative.
+    charges = [r for r in ex.rows if r.get("classification") != "rent" and abs(r["amount"]) > 0.005]
+    if charges and sum(1 for r in charges if r["amount"] < 0) * 5 >= len(charges) * 4:
+        for r in ex.rows:
+            if r.get("classification") != "rent" and r["amount"]:
+                r["amount"] = round(-r["amount"], 2)
+        ex.warnings.append(
+            "This statement prints its charges as negative amounts; they were imported as "
+            "positive expenses, which is how the P&L subtracts them."
+        )
+
     if not ex.rows:
         ex.warnings.append(
             "No line items could be read from this PDF. If it is a scanned image, "
@@ -2229,8 +2277,97 @@ def _extract_single(
     return ex
 
 
-def _fingerprinted(result: StatementFile, lines: list["_DocLine"]) -> StatementFile:
+# ------------------------------------------------------------------------ totals check
+# Every parser above is a guess about a layout, and a wrong guess doesn't fail — it produces
+# plausible-looking rows (the first Lightning statement read as one property with the note
+# lines as expenses). Almost every statement prints its own arithmetic, so that is the test:
+# what was read must add up to what the statement says it adds up to. This is what tells the
+# operator a file needs looking at, and what will decide when a layout needs the AI fallback.
+#
+# Only LABELLED totals are used, by role — a bare "Total" is ambiguous (a statement prints one
+# under every invoice). Every role found must agree: on the misread Lightning file income
+# still matched, and only the expenditure total gave it away.
+
+_CHECK_ROLES = (
+    ("income", re.compile(
+        r"^\s*total\s+(?:income|collected|receipts|rents?(?:\s+(?:received|collected))?|"
+        r"rental\s+income)\b", re.IGNORECASE)),
+    ("expense", re.compile(
+        r"^\s*total\s+(?:expenditure|expenses?|charges|outgoings|deductions|costs|disbursements)\b",
+        re.IGNORECASE)),
+    ("net", re.compile(
+        r"^\s*(?:\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}\s+)?(?:net\s+income|payment\s+made\s+to\s+you|"
+        r"paid\s+to\s+you|balance\s+due|amount\s+(?:due|paid)\s+to\s+(?:you|landlord|owner))\b",
+        re.IGNORECASE)),
+)
+_CHECK_NUMBER_RE = re.compile(r"\(?-?[£$€]?\s?-?\d[\d,]*(?:\.\d+)?\)?-?")
+_CHECK_TOL = 0.015
+_CHECK_WORDS = {"income": "income", "expense": "expenditure", "net": "net / paid out"}
+
+
+def _printed_totals(text: str) -> dict[str, list[list[float]]]:
+    """role -> one list of figures per labelled line (every column: net, VAT, gross, YTD)."""
+    found: dict[str, list[list[float]]] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        for role, pattern in _CHECK_ROLES:
+            m = pattern.match(line)
+            if not m:
+                continue
+            values = []
+            for tok in _CHECK_NUMBER_RE.findall(line[m.end():]):
+                if "/" in tok or not re.search(r"\d", tok):
+                    continue
+                v = _parse_amount(tok.replace(" ", ""))
+                if v is not None:
+                    values.append(v)
+            if values:
+                found.setdefault(role, []).append(values)
+            break
+    return found
+
+
+def _check_totals(result: StatementFile, text: str) -> None:
+    """Set ``result.check`` / ``check_notes`` by comparing the rows read with the statement's
+    printed totals. Expenses are compared by size: a statement may print them negative."""
+    income = expense = 0.0
+    for ex in result.extractions:
+        for r in ex.rows:
+            if r.get("kind") == "rent" or r.get("classification") == "rent":
+                income += r["amount"]
+            else:
+                expense += r["amount"]
+    read = {"income": round(income, 2), "expense": round(abs(expense), 2),
+            "net": round(income - expense, 2)}
+
+    notes: list[str] = []
+    verdicts: list[bool] = []
+    for role, lines in _printed_totals(text).items():
+        target = read[role]
+        size = (lambda v: abs(v)) if role == "expense" else (lambda v: v)
+        # A match against ANY figure on the line (net/VAT/gross/YTD columns), or against the
+        # sum of the lines when the total is printed per property.
+        candidates = {size(v) for values in lines for v in values}
+        candidates.add(size(sum(values[0] for values in lines)))
+        ok = any(abs(target - c) < _CHECK_TOL for c in candidates)
+        verdicts.append(ok)
+        printed = _money(size(lines[0][0])) if len(lines) == 1 else f"{len(lines)} lines"
+        word = _CHECK_WORDS[role]
+        notes.append(
+            f"{word} {_money(target)} ✓" if ok
+            else f"{word}: read {_money(target)}, statement says {printed}"
+        )
+
+    if result.parser_check:
+        verdicts.append(result.parser_check == "matched")
+    if verdicts:
+        result.check = "matched" if all(verdicts) else "mismatch"
+    result.check_notes = notes
+
+
+def _fingerprinted(result: StatementFile, lines: list["_DocLine"], text: str = "") -> StatementFile:
     result.fingerprint, result.sample = fingerprint(lines, result.format)
+    _check_totals(result, text)
     return result
 
 
@@ -2259,15 +2396,15 @@ def extract_statements(
     # ordinary single-property statement still reaches _extract_single untouched.
     sectioned = _parse_sectioned(lines, text, known_properties, known_categories)
     if sectioned is not None:
-        return _fingerprinted(sectioned, lines)
+        return _fingerprinted(sectioned, lines, text)
 
     roll = _parse_rent_roll(text, known_properties, known_categories)
     if roll is not None:
-        return _fingerprinted(roll, lines)
+        return _fingerprinted(roll, lines, text)
 
     ledger = _parse_ledger(lines, text, known_properties, known_categories)
     if ledger is not None:
-        return _fingerprinted(ledger, lines)
+        return _fingerprinted(ledger, lines, text)
 
     ex = _extract_single(
         text,
@@ -2278,7 +2415,7 @@ def extract_statements(
         ollama_url=ollama_url,
         ollama_model=ollama_model,
     )
-    return _fingerprinted(StatementFile(format="single", extractions=[ex]), lines)
+    return _fingerprinted(StatementFile(format="single", extractions=[ex]), lines, text)
 
 
 def extract_statement(

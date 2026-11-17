@@ -441,6 +441,8 @@ async def extract_statements_batch(
                 format_id=fmt.id if fmt else None,
                 format_label=fmt.label if fmt else None,
                 format_match=match,
+                check=result.check,
+                check_notes=result.check_notes,
             )
         )
 

@@ -740,6 +740,10 @@ class StatementFileNote(BaseModel):
     format_id: str | None = None
     format_label: str | None = None
     format_match: str | None = None  # "exact" | "close"
+    # Whether the rows read add up to the statement's own printed totals (see
+    # statements._check_totals): "matched" | "mismatch" | "unverified", and which totals.
+    check: str = "unverified"
+    check_notes: list[str] = []
 
 
 class StatementFormatAlias(BaseModel):

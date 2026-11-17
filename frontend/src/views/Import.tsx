@@ -424,6 +424,9 @@ function StatementBatchSection({ token }: { token: string }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [stmts, setStmts] = useState<Stmt[]>([]);
   const [files, setFiles] = useState<StatementFileNote[]>([]);
+  // Files whose figures didn't add up to the statement's printed totals, that the operator
+  // has looked at and released anyway. Keyed by filename.
+  const [figuresChecked, setFiguresChecked] = useState<Record<string, boolean>>({});
   const [newCatCls, setNewCatCls] = useState<Record<string, Classification>>({});
   const [newPropType, setNewPropType] = useState<Record<string, "single" | "multifamily">>({});
   // Decisions on NEW items, keyed by lowercased name. Absent = pending (not used). A decision
@@ -455,6 +458,7 @@ function StatementBatchSection({ token }: { token: string }) {
     setError(null);
     setUploaded(false);
     setFiles([]);
+    setFiguresChecked({});
     setCatDecision({});
     setPropDecision({});
     try {
@@ -545,8 +549,14 @@ function StatementBatchSection({ token }: { token: string }) {
   const pendingCatCount = unknownCats.filter((n) => catState(n) === "pending").length;
   const pendingPropCount = unknownProps.filter((n) => !propDecision[n.trim().toLowerCase()]).length;
 
+  // The file a statement came from: a portfolio file is split into one statement per
+  // property (sourceFile), an ordinary statement is its own file.
+  const noteOf = (s: Stmt) => files.find((f) => f.filename === (s.sourceFile ?? s.filename));
+
   const stmtStatus = (s: Stmt): { ok: boolean; label: string } => {
     if (s.error) return { ok: false, label: "can't read" };
+    const note = noteOf(s);
+    if (note?.check === "mismatch" && !figuresChecked[note.filename]) return { ok: false, label: "check figures" };
     const pend = uniqueCI(tickedRows(s).map((r) => r.category)).filter((n) => catState(n) === "pending");
     if (pend.length) return { ok: false, label: `approve ${pend.length} categor${pend.length === 1 ? "y" : "ies"}` };
     if (!propApproved(s)) return { ok: false, label: s.detectedProperty ? "approve property" : "pick property" };
@@ -753,7 +763,34 @@ function StatementBatchSection({ token }: { token: string }) {
                       : f.format === "ledger"
                         ? chip("#eef2ff", "#3730a3", `portfolio ledger · ${f.statements} statements`)
                         : chip("#eef2ff", "#3730a3", "statement")}
+                  {f.check === "matched"
+                    ? chip("#ecfdf5", "#065f46", "✓ matches the statement's totals")
+                    : f.check === "mismatch"
+                      ? chip("#fef2f2", "#991b1b", "⚠ figures don't match the statement")
+                      : chip("#f4f4f5", "#52525b", "no printed totals to check against")}
                 </div>
+                {f.check_notes.length > 0 && (
+                  <p className="muted" style={{ marginTop: 6, marginBottom: 0 }}>
+                    Totals: {f.check_notes.join(" · ")}
+                  </p>
+                )}
+                {f.check === "mismatch" && (
+                  <div style={{ marginTop: 8 }}>
+                    <p style={{ margin: "0 0 6px", color: "#991b1b" }}>
+                      What was read doesn't add up to the totals printed on this statement, so the
+                      layout was probably misread. Its statements are held back — check the rows
+                      against the PDF before uploading.
+                    </p>
+                    <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={!!figuresChecked[f.filename]}
+                        onChange={(e) => setFiguresChecked((c) => ({ ...c, [f.filename]: e.target.checked }))}
+                      />
+                      I've checked these figures against the statement — allow upload
+                    </label>
+                  </div>
+                )}
                 {f.warnings.map((w, i) => (
                   <p key={i} className="muted" style={{ marginTop: 6, marginBottom: 0 }}>
                     · {w}
