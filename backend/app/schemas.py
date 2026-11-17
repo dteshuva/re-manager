@@ -133,6 +133,9 @@ class UnitOut(BaseModel):
     unit_number: str
     label: str | None = None
     market_rent: float | None = None
+    # Read-only: a non-lettable space (migration 0014). Exposed so a client can tell a
+    # single-let's ONE lettable unit apart, as occupancy and the importer do.
+    is_shell: bool = False
 
     class Config:
         from_attributes = True
@@ -669,7 +672,7 @@ class StatementPreview(BaseModel):
     this for review, offers to create any unknown property/categories, then applies the rows
     through the existing ``/import/rows`` seam (idempotent, lock-protected, dry-run-able)."""
 
-    backend: str  # "ollama" | "heuristic" | "rent_roll" | "sectioned"
+    backend: str  # "ollama" | "heuristic" | "rent_roll" | "sectioned" | "ledger"
     # The SHAPE of the file this came from: "single" (one statement, one property),
     # "rent_roll" (one page listing many properties) or "sectioned" (a table per property).
     format: str = "single"
@@ -726,7 +729,7 @@ class StatementFileNote(BaseModel):
     """
 
     filename: str
-    format: str  # "single" | "rent_roll" | "sectioned"
+    format: str  # "single" | "rent_roll" | "sectioned" | "ledger"
     statements: int  # how many property statements this file produced
     warnings: list[str] = []
     # The layout's identity, and the saved format (if any) whose mappings were applied to

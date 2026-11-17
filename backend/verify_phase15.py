@@ -548,9 +548,11 @@ print("\n== 12. A single-let property's one unit is a full citizen of the roster
 single_pid = client.post(
     "/properties", headers=H, json={"name": PROP_NAME + " (single)", "type": "single"}
 ).json()["id"]
-single_unit = client.post(
-    f"/properties/{single_pid}/units", headers=H, json={"unit_number": "1"}
-).json()["id"]
+# A single-let is created with its one unit ("1") already in place.
+single_units = client.get(f"/properties/{single_pid}/units", headers=H).json()
+check("a new single-let comes with exactly one unit, numbered 1",
+      [u["unit_number"] for u in single_units] == ["1"], str(single_units))
+single_unit = single_units[0]["id"]
 client.post(f"/units/{single_unit}/leases", headers=H, json={
     "tenant_name": None, "start_date": "2025-12-01", "end_date": None,
     "contract_rent": float(RENT_OLD), "status": "active",

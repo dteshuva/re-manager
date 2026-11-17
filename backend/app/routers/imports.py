@@ -449,12 +449,21 @@ async def extract_statements_batch(
         # point: the batch flow already resolves mixed properties, dedupes their new
         # categories, and applies each through the import core.
         split = len(previews) > 1
+        # A ledger statement can split ONE property across months, so the month goes in the
+        # label whenever a property appears more than once in the file.
+        seen: dict[str, int] = {}
+        for preview in previews:
+            k = (preview.detected_property or "").strip().lower()
+            seen[k] = seen.get(k, 0) + 1
         for preview in previews:
             label = (
                 f"{fname} — {preview.detected_property or 'unidentified property'}"
                 if split
                 else fname
             )
+            k = (preview.detected_property or "").strip().lower()
+            if split and seen.get(k, 0) > 1 and preview.detected_month:
+                label += f" ({preview.detected_month:%b %Y})"
             items.append(
                 StatementBatchItem(
                     filename=label,

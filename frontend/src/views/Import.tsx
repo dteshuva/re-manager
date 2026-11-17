@@ -750,7 +750,9 @@ function StatementBatchSection({ token }: { token: string }) {
                     ? chip("#eef2ff", "#3730a3", `rent roll · ${f.statements} properties`)
                     : f.format === "sectioned"
                       ? chip("#eef2ff", "#3730a3", `portfolio statement · ${f.statements} properties`)
-                      : chip("#eef2ff", "#3730a3", "statement")}
+                      : f.format === "ledger"
+                        ? chip("#eef2ff", "#3730a3", `portfolio ledger · ${f.statements} statements`)
+                        : chip("#eef2ff", "#3730a3", "statement")}
                 </div>
                 {f.warnings.map((w, i) => (
                   <p key={i} className="muted" style={{ marginTop: 6, marginBottom: 0 }}>

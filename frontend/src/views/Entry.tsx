@@ -12,7 +12,9 @@ import {
   unlockPeriod,
   upsertRecord,
   type Category,
+  type Classification,
   type LineItem,
+  type MonthlyRecord,
   type PeriodState,
   type PeriodStatus,
   type Property,
@@ -30,7 +32,18 @@ import SharedExpenses from "../components/SharedExpenses";
 // `basis` is how the row is STATED: a figure the operator types, or a rate the server turns
 // into a figure ("management: 8% of rent"). `amount` and `rate_pct` are both kept as the
 // user typed them so toggling between the two doesn't discard what's in the other box.
-type Row = { id: string; category_id: string; basis: "amount" | "percent"; amount: string; rate_pct: string };
+//
+// `classification` is the line's own override (null = the category's default). It isn't
+// edited here, but it is carried through a save so re-saving a month doesn't silently drop an
+// override an import set — and on a single-let it decides which lines are rent.
+type Row = {
+  id: string;
+  category_id: string;
+  basis: "amount" | "percent";
+  amount: string;
+  rate_pct: string;
+  classification: Classification | null;
+};
 
 const newRow = (): Row => ({
   id: crypto.randomUUID(),
@@ -38,6 +51,7 @@ const newRow = (): Row => ({
   basis: "amount",
   amount: "",
   rate_pct: "",
+  classification: null,
 });
 
 const rowFrom = (li: LineItem): Row => ({
@@ -46,6 +60,7 @@ const rowFrom = (li: LineItem): Row => ({
   basis: li.rate_pct != null ? "percent" : "amount",
   amount: String(li.amount),
   rate_pct: li.rate_pct != null ? String(li.rate_pct) : "",
+  classification: li.classification ?? null,
 });
 
 const thisMonth = () => new Date().toISOString().slice(0, 7); // YYYY-MM
@@ -66,6 +81,9 @@ export default function Entry({ token }: { token: string }) {
   const [notes, setNotes] = useState("");
   const [isVacant, setIsVacant] = useState(false);
   const [recordId, setRecordId] = useState<string | null>(null);
+  // Single-let only: the house's unit-tier record, where its rent lives (see `soleUnit`).
+  const [unitRecordId, setUnitRecordId] = useState<string | null>(null);
+  const [unitNotes, setUnitNotes] = useState<string | null>(null);
   const [period, setPeriod] = useState<PeriodStatus | null>(null);
 
   // Rent this scope's percentage lines are charged on, straight from the server so the
@@ -84,6 +102,15 @@ export default function Entry({ token }: { token: string }) {
   const property = properties.find((p) => p.id === propertyId);
   const locked = period?.status === "locked";
 
+  // A single-let house is ONE ledger to the person typing it, but its rent is filed on its one
+  // lettable unit (that's where the tenancy, rent roll and arrears read it) and everything
+  // else on the property. So for a single-let this screen shows both records as one list and,
+  // on save, files rent to the unit and the rest to the property — the same rule the importer
+  // applies to a statement. Without this the house's rent was invisible here, and re-typing
+  // it put a second copy at the property tier.
+  const lettable = units.filter((u) => !u.is_shell);
+  const soleUnit = property && property.type !== "multifamily" && lettable.length === 1 ? lettable[0] : null;
+
   useEffect(() => {
     let cancelled = false;
     listProperties(token).then((r) => !cancelled && setProperties(r)).catch((e) => !cancelled && setError(e.message));
@@ -94,19 +121,42 @@ export default function Entry({ token }: { token: string }) {
     };
   }, [token]);
 
-  // Units for the selected property (multifamily only).
+  // Units for the selected property: a multifamily's to pick a scope from, a single-let's to
+  // find the one unit its rent is filed on.
   useEffect(() => {
     let cancelled = false;
     setScope("");
-    if (property?.type === "multifamily") {
+    setUnits([]);
+    if (property) {
       listUnits(token, property.id).then((r) => !cancelled && setUnits(r)).catch((e) => !cancelled && setError(e.message));
-    } else {
-      setUnits([]);
     }
     return () => {
       cancelled = true;
     };
   }, [propertyId]);
+
+  const applyRecords = (recs: MonthlyRecord[]) => {
+    if (soleUnit) {
+      const propRec = recs.find((r) => r.unit_id === null) ?? null;
+      const unitRec = recs.find((r) => r.unit_id === soleUnit.id) ?? null;
+      setRecordId(propRec?.id ?? null);
+      setUnitRecordId(unitRec?.id ?? null);
+      setNotes(propRec?.notes ?? "");
+      setUnitNotes(unitRec?.notes ?? null);
+      setIsVacant(unitRec?.is_vacant ?? false);
+      // Rent first, as a statement reads.
+      const items = [...(unitRec?.line_items ?? []), ...(propRec?.line_items ?? [])];
+      setRows(items.length ? items.map(rowFrom) : [newRow()]);
+      return;
+    }
+    const unitId = scope || null;
+    const rec = recs.find((r) => r.unit_id === unitId) ?? null;
+    setRecordId(rec?.id ?? null);
+    setUnitRecordId(null);
+    setNotes(rec?.notes ?? "");
+    setIsVacant(rec?.is_vacant ?? false);
+    setRows(rec && rec.line_items.length ? rec.line_items.map(rowFrom) : [newRow()]);
+  };
 
   // Load the record + period status whenever scope/month changes. `cancelled` guards
   // against a slow, superseded request overwriting fresher state if the user switches
@@ -116,16 +166,8 @@ export default function Entry({ token }: { token: string }) {
     let cancelled = false;
     setMsg(null);
     setError(null);
-    const unitId = scope || null;
     listRecords(token, { property_id: propertyId, month })
-      .then((recs) => {
-        if (cancelled) return;
-        const rec = recs.find((r) => r.unit_id === unitId) ?? null;
-        setRecordId(rec?.id ?? null);
-        setNotes(rec?.notes ?? "");
-        setIsVacant(rec?.is_vacant ?? false);
-        setRows(rec && rec.line_items.length ? rec.line_items.map(rowFrom) : [newRow()]);
-      })
+      .then((recs) => !cancelled && applyRecords(recs))
       .catch((e) => !cancelled && setError(e.message));
     listPeriods(token, { property_id: propertyId, month })
       .then((ps) => !cancelled && setPeriod(ps[0] ?? null))
@@ -137,7 +179,7 @@ export default function Entry({ token }: { token: string }) {
     return () => {
       cancelled = true;
     };
-  }, [propertyId, scope, monthStr]);
+  }, [propertyId, scope, monthStr, soleUnit?.id]);
 
   const addRow = () => setRows((r) => [...r, newRow()]);
   const setRow = (id: string, patch: Partial<Row>) =>
@@ -145,22 +187,67 @@ export default function Entry({ token }: { token: string }) {
   const removeRow = (id: string) => setRows((r) => r.filter((row) => row.id !== id));
 
   const catName = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c.name])), [categories]);
+  const catClass = useMemo(
+    () => Object.fromEntries(categories.map((c) => [c.id, c.default_classification])),
+    [categories],
+  );
 
   async function save() {
     setMsg(null);
     setError(null);
     // A rate-stated row sends the rate and no amount — the server derives the figure from
     // rent, and sending both is rejected precisely because they could disagree.
-    const line_items = rows
-      .filter((r) => r.category_id && (r.basis === "percent" ? r.rate_pct !== "" : r.amount !== ""))
-      .map((r) =>
-        r.basis === "percent"
-          ? { category_id: r.category_id, amount: 0, rate_pct: Number(r.rate_pct) }
-          : { category_id: r.category_id, amount: Number(r.amount) },
-      );
+    const filled = rows.filter((r) => r.category_id && (r.basis === "percent" ? r.rate_pct !== "" : r.amount !== ""));
+    const toItem = (r: Row) => ({
+      category_id: r.category_id,
+      ...(r.classification ? { classification: r.classification } : {}),
+      ...(r.basis === "percent" ? { amount: 0, rate_pct: Number(r.rate_pct) } : { amount: Number(r.amount) }),
+    });
+    const line_items = filled.map(toItem);
     const dupes = line_items.length !== new Set(line_items.map((l) => l.category_id)).size;
     if (dupes) {
-      setError("Each category can appear only once per record.");
+      setError(
+        soleUnit
+          ? "Each category can appear only once per month — remove the duplicate line."
+          : "Each category can appear only once per record.",
+      );
+      return;
+    }
+    if (soleUnit) {
+      // Rent (by the line's effective classification) to the unit, the rest to the property.
+      const isRent = (r: Row) => (r.classification ?? catClass[r.category_id]) === "rent";
+      const rentItems = filled.filter(isRent).map(toItem);
+      const otherItems = filled.filter((r) => !isRent(r)).map(toItem);
+      try {
+        // Unit first: a "% of rent" fee on the property is derived from the rent just saved.
+        if (rentItems.length || unitRecordId || isVacant) {
+          await upsertRecord(token, {
+            property_id: propertyId,
+            unit_id: soleUnit.id,
+            month,
+            notes: unitNotes,
+            is_vacant: isVacant,
+            line_items: rentItems,
+          });
+        }
+        if (otherItems.length || recordId || notes) {
+          await upsertRecord(token, {
+            property_id: propertyId,
+            unit_id: null,
+            month,
+            notes: notes || null,
+            is_vacant: false,
+            line_items: otherItems,
+          });
+        }
+        applyRecords(await listRecords(token, { property_id: propertyId, month }));
+        getRentBasis(token, { property_id: propertyId, month, unit_id: null })
+          .then((b) => setBasisRent(b.rent))
+          .catch(() => setBasisRent(null));
+        setMsg(`Saved ${line_items.length} line item(s).`);
+      } catch (e) {
+        setError((e as Error).message);
+      }
       return;
     }
     try {
@@ -222,7 +309,7 @@ export default function Entry({ token }: { token: string }) {
             onChange={(e) => setScope(e.target.value)}
             disabled={property?.type !== "multifamily"}
           >
-            <option value="">Property-tier (shared)</option>
+            <option value="">{soleUnit ? `Whole house (rent filed to unit ${soleUnit.unit_number})` : "Property-tier (shared)"}</option>
             {units.map((u) => (
               <option key={u.id} value={u.id}>
                 Unit {u.unit_number}
@@ -251,7 +338,7 @@ export default function Entry({ token }: { token: string }) {
             </p>
           )}
 
-          {scope && (
+          {(scope || soleUnit) && (
             <label className="row" style={{ gap: 8, marginBottom: 12, alignItems: "center" }}>
               <input
                 type="checkbox"
@@ -259,7 +346,7 @@ export default function Entry({ token }: { token: string }) {
                 disabled={locked}
                 onChange={(e) => setIsVacant(e.target.checked)}
               />
-              {`Mark this unit as ${t("vacant")} this month`}
+              {soleUnit ? `Mark this house as ${t("vacant")} this month` : `Mark this unit as ${t("vacant")} this month`}
               <span className="muted" style={{ fontSize: 12 }}>
                 {`(explicit — distinct from simply not posting a record; ${currencySymbol()}0 rent either way)`}
               </span>
@@ -385,15 +472,16 @@ export default function Entry({ token }: { token: string }) {
             <button className="btn btn-primary" disabled={locked} onClick={save}>
               Save month
             </button>
-            {recordId && (
+            {(recordId || unitRecordId) && (
               <button
                 className="btn"
                 disabled={locked}
                 onClick={() =>
-                  confirm("Delete this record and its line items?") &&
-                  deleteRecord(token, recordId)
+                  confirm(soleUnit ? "Delete this month's lines for the house?" : "Delete this record and its line items?") &&
+                  Promise.all([recordId, unitRecordId].filter((x): x is string => !!x).map((id) => deleteRecord(token, id)))
                     .then(() => {
                       setRecordId(null);
+                      setUnitRecordId(null);
                       setRows([newRow()]);
                       setNotes("");
                       setMsg("Record deleted.");

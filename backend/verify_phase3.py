@@ -46,11 +46,13 @@ print(f"   created property {prop['name']} + unit {unit['unit_number']}, and sin
 # once tenancies arrived, because a tenancy hangs off a unit (``lease.unit_id``) and so do the
 # rent roll, the rent schedule and the arrears balance — under the old rule a portfolio of houses
 # could never record a tenancy. The CAP is what still makes the property type mean something.
-r = client.post(f"/properties/{single['id']}/units", json={"unit_number": "1"}, headers=H)
-assert r.status_code == 201, r.text
+# The single-let is created WITH that unit ("1"), so imported rent has a tenancy to land on
+# from its first statement (see create_property / importer._resolve_row).
+r = client.get(f"/properties/{single['id']}/units", headers=H)
+assert [u["unit_number"] for u in r.json()] == ["1"], r.text
 r = client.post(f"/properties/{single['id']}/units", json={"unit_number": "X"}, headers=H)
 assert r.status_code == 409, r.text
-print("   single-asset property: one unit accepted, a second -> 409 OK")
+print("   single-asset property: born with unit 1, a second -> 409 OK")
 
 # Grab two seeded categories to build line items.
 cats = {c["name"]: c for c in client.get("/categories", headers=H).json()}

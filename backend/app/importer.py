@@ -10,6 +10,10 @@ Idempotency is keyed on **(property_id, unit_id, month, category_id)**: each imp
 one line item per category, leaving other categories on the same monthly_record untouched.
 So re-importing June overwrites June's affected rows rather than duplicating them.
 
+RENT with no unit on a property with exactly one lettable unit is filed to that unit (see
+:func:`_resolve_row`), and replaces the same category's property-tier line for that month if
+an earlier import left one there.
+
 Locked property-months are never written; rows targeting them are reported as errors.
 """
 
@@ -52,6 +56,14 @@ class _Resolver:
         self.unit_by_id = {u.id: u for u in units}
         # (property_id, unit_number.lower()) -> unit
         self.unit_by_key = {(u.property_id, u.unit_number.strip().lower()): u for u in units}
+        # property_id -> its one lettable unit, for properties that have exactly one. The same
+        # "one non-shell unit" rule occupancy (migration 0029) and missing-data use, so a
+        # property counts as single-let in exactly the same cases everywhere.
+        lettable: dict[str, list[Unit]] = defaultdict(list)
+        for u in units:
+            if not u.is_shell:
+                lettable[u.property_id].append(u)
+        self.sole_unit = {pid: us[0] for pid, us in lettable.items() if len(us) == 1}
 
         cats = db.scalars(
             select(Category).where(Category.account_id == account_id)
@@ -72,7 +84,9 @@ class _Resolver:
 
 
 class _ResolvedRow:
-    __slots__ = ("property_id", "unit_id", "month", "category_id", "classification", "amount")
+    __slots__ = (
+        "property_id", "unit_id", "month", "category_id", "classification", "amount", "rerouted"
+    )
 
     def __init__(self, property_id, unit_id, month, category_id, classification, amount):
         self.property_id = property_id
@@ -81,6 +95,9 @@ class _ResolvedRow:
         self.category_id = category_id
         self.classification = classification
         self.amount = amount
+        # True when the row named no unit and was filed to the property's sole unit — the
+        # same figure may then still sit at the property tier from an earlier import.
+        self.rerouted = False
 
 
 def _resolve_row(r: _Resolver, row: ImportRow, n: int) -> tuple[_ResolvedRow | None, list[ImportIssue]]:
@@ -138,7 +155,28 @@ def _resolve_row(r: _Resolver, row: ImportRow, n: int) -> tuple[_ResolvedRow | N
 
     if errs:
         return None, errs
-    return _ResolvedRow(prop.id, unit_id, month, cat.id, row.classification, row.amount), []
+
+    # Rent belongs to a TENANCY, so it is filed at the unit. A statement names a house, not
+    # a flat, and every statement parser emits rent with no unit; on a property with exactly
+    # one lettable unit there is only one place it can belong. Filed at the property tier it
+    # would be invisible to the rent roll and to arrears (both read unit-tier rent), which is
+    # why scripts/rent_to_unit_tier.py moved the history down — this keeps new imports from
+    # re-opening the gap. A property with several units is left alone: nothing here says
+    # which flat paid. Effective classification as in that script: the row's own, else the
+    # category's default.
+    rerouted = False
+    if (
+        unit_id is None
+        and not has_unit
+        and (row.classification or cat.default_classification) == "rent"
+        and prop.id in r.sole_unit
+    ):
+        unit_id = r.sole_unit[prop.id].id
+        rerouted = True
+
+    rr = _ResolvedRow(prop.id, unit_id, month, cat.id, row.classification, row.amount)
+    rr.rerouted = rerouted
+    return rr, []
 
 
 def apply_import(
@@ -195,6 +233,23 @@ def apply_import(
         # Cache existing monthly_records for the touched scopes so we get-or-create once.
         rec_cache: dict[tuple, MonthlyRecord] = {}
         for rr in resolved:
+            if rr.rerouted:
+                # Re-importing a month that an earlier import filed at the property tier: the
+                # same fact must not end up at both levels, so the property-tier line of this
+                # category is replaced, exactly as an ordinary re-import overwrites in place.
+                stale = db.scalar(
+                    select(LineItem)
+                    .join(MonthlyRecord, MonthlyRecord.id == LineItem.monthly_record_id)
+                    .where(
+                        MonthlyRecord.property_id == rr.property_id,
+                        MonthlyRecord.unit_id.is_(None),
+                        MonthlyRecord.month == rr.month,
+                        LineItem.category_id == rr.category_id,
+                    )
+                )
+                if stale is not None:
+                    db.delete(stale)
+                    db.flush()
             rkey = (rr.property_id, rr.unit_id, rr.month)
             rec = rec_cache.get(rkey)
             if rec is None:

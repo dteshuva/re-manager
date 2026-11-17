@@ -699,6 +699,15 @@ def _snap_category(label: str, known_categories: list[str]) -> str:
     hit = by_lower.get(label.strip().lower())
     if hit:
         return hit
+    # The same words in another order ("Maintenance & Repairs" vs "Repairs & Maintenance").
+    def words(s: str) -> frozenset[str]:
+        return frozenset(re.findall(r"[a-z0-9]+", s.lower().replace("&", " and ")))
+
+    lw = words(label)
+    if len(lw) >= 2:
+        for c in known_categories:
+            if words(c) == lw:
+                return c
     if _RE_MGMT_FEE.search(label) and re.search(r"fee|charge|commission", label, re.IGNORECASE):
         for c in known_categories:
             if _RE_MGMT_FEE.search(c):
@@ -1592,6 +1601,401 @@ def _reconcile_sectioned(
     )
 
 
+# ------------------------------------------------------------- dated ledger statements
+# A fourth shape (Lightning Estates). Each property is an address heading followed by an
+# "Income" and an "Expenditure" list of DATED entries, one per line, the amount at the right
+# edge, with small indented note lines underneath (the fee basis, a VAT split, the supplier,
+# the period a fee covers):
+#
+#     125 Allendale Road, Byker, Newcastle upon Tyne, Tyne and Wear, NE6 2SY
+#     Income
+#     29/09/2026  Rent Received For Period 29.10.2026 - 28.11.2026 (Anne Tindale)   £697.00
+#                                                                                £1,394.00
+#     Expenditure
+#     29/09/2026  Management fee                                                  -£75.28
+#                   9% of Rent Received
+#                   Net value £62.73, VAT @ 20% : £12.55
+#                   29.10.2026 to 28.11.2026
+#     ...
+#     03/11/2026  Payment Made To You                                             £609.55
+#                                                         Total Income         £3,728.81
+#
+# Read as text, the note lines carry money ("Net value £62.73") and become line items, the
+# entry date becomes part of every category name, and every property collapses into the last
+# address. The rules here:
+#
+# * An ENTRY is a line that starts with a date at the block's left margin and ends with an
+#   amount. A NOTE is a line starting at the description column's x; it is never an amount.
+#   Anything else (the page header/footer repeated across a page break) is ignored.
+# * Everything after the payout line ("Payment Made To You") is the agent's own invoices and
+#   the contractors' — copies of entries already read — so nothing past it is an entry.
+# * The MONTH of an entry with a tenancy period (rent, and the fee charged on it) is the month
+#   that period ends in. A period starting weeks AFTER the money arrived is a mislabel
+#   (the agent has been seen printing each period a month late), so it is moved back whole
+#   months until it starts where the payment was, and the correction is reported. An entry
+#   with no period posts to its own date. Nothing posts after the statement date.
+# * One extraction per (property, month): a property whose rents span two months becomes two
+#   ordinary statements, which the batch flow handles without a new concept.
+
+_LEDGER_DATE_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}$")
+_LEDGER_PAYOUT_RE = re.compile(
+    r"payment\s+made\s+to\s+you|paid\s+to\s+(?:you|landlord|owner)|amount\s+paid\s+to|"
+    r"payment\s+to\s+landlord",
+    re.IGNORECASE,
+)
+_LEDGER_TOTAL_RE = re.compile(r"^\s*total\s+(income|expenditure|expenses?)\b", re.IGNORECASE)
+_LEDGER_STATEMENT_DATE_RE = re.compile(
+    r"statement\s+date\s*:?\s*(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})", re.IGNORECASE
+)
+_LEDGER_RENT_RE = re.compile(r"^\s*rent\b", re.IGNORECASE)
+# How far after the payment a tenancy period may start before it is read as a mislabel.
+# Rent is paid in advance, so a period normally starts on or within days of the payment.
+_LEDGER_MAX_LEAD_DAYS = 14
+_LEDGER_X_TOL = 4.0
+
+
+@dataclass
+class _LedgerEntry:
+    when: date | None
+    side: str  # "income" | "expense"
+    label: str  # the description as printed, date and amount removed
+    amount: float
+    notes: list[str] = field(default_factory=list)
+    date_tok: str = ""  # the date as printed; parsed once the document's date order is known
+
+
+@dataclass
+class _LedgerBlock:
+    name: str
+    raw: str
+    entries: list[_LedgerEntry] = field(default_factory=list)
+    subtotals: dict[str, float] = field(default_factory=dict)  # side -> printed subtotal
+
+
+def _ledger_money(word: _Word) -> float | None:
+    """A money-SHAPED figure only (currency sign or pence), so a stray reference number at
+    the end of a line is never an amount."""
+    if not re.search(r"[£$€]|\.\d{2}\b", word.text):
+        return None
+    return _cell_value(word)
+
+
+def _ledger_property(label: str, known: list[str]) -> tuple[str | None, bool]:
+    """The property an address heading names. The heading carries the district, town,
+    county and postcode after the street ("…Road, Byker, Newcastle upon Tyne, …"), which a
+    stored "125 Allendale Rd, Gateshead" disagrees with past the street, so the street part
+    is tried on its own first."""
+    street = label.split(",")[0].strip()
+    for cand in (street, label):
+        hit = _match_known_property(cand, known)
+        if hit:
+            return hit, True
+    address, _note = _split_address(label)
+    return address, False
+
+
+def _ledger_period(entry: _LedgerEntry, dayfirst: bool) -> tuple[date, date, str] | None:
+    for text in (entry.label, *entry.notes):
+        pm = _PERIOD_RE.search(text)
+        if pm:
+            start, end = _parse_dmy(pm.group(1), dayfirst), _parse_dmy(pm.group(2), dayfirst)
+            if start and end:
+                return start, end, pm.group(0)
+    return None
+
+
+def _ledger_month(
+    entry: _LedgerEntry, dayfirst: bool
+) -> tuple[date | None, str | None, str | None]:
+    """``(month, period note, correction warning)`` for one entry."""
+    from dateutil.relativedelta import relativedelta
+
+    found = _ledger_period(entry, dayfirst)
+    if found is None:
+        month = date(entry.when.year, entry.when.month, 1) if entry.when else None
+        return month, None, None
+    start, end, printed = found
+    warning = None
+    if entry.when and (start - entry.when).days > _LEDGER_MAX_LEAD_DAYS:
+        k = 0
+        s, e = start, end
+        while (s - entry.when).days > _LEDGER_MAX_LEAD_DAYS and k < 12:
+            k += 1
+            s, e = start - relativedelta(months=k), end - relativedelta(months=k)
+        warning = (
+            f"“{entry.label or 'Entry'}” received {entry.when:%d/%m/%Y} is printed for the "
+            f"period {printed}, which starts {k} month{'s' if k > 1 else ''} after the payment "
+            f"— read as {s:%d/%m/%Y} – {e:%d/%m/%Y}. Change the month if the printed period "
+            "is right."
+        )
+        start, end = s, e
+    # The month the period ENDS in, not the one it mostly covers. This portfolio's history
+    # was posted that way by the previous agent (29/8–28/9 → September, 14/9–13/10 →
+    # October), and "mostly covers" would put a 14/10–13/11 tenancy into an October that
+    # already holds the 14/9–13/10 rent — two rents in one month, none in the next. A
+    # tenancy month runs start-day to the day before, so its end always names the next
+    # month in the series.
+    _month, end, _fixed = _period_month(start, end)  # repairs a mistyped end year
+    month = date(end.year, end.month, 1)
+    return month, f"period {start:%d/%m/%Y} – {end:%d/%m/%Y}", warning
+
+
+def _ledger_stable_label(label: str) -> str:
+    """The printed description without what changes every month: "Rent Received For Period
+    29.10.2026 - 28.11.2026 (Anne Tindale)" → "Rent Received"."""
+    out = _PERIOD_RE.sub(" ", label)
+    out = re.sub(r"\([^()]*\)\s*$", " ", out)
+    out = re.sub(r"\b(?:for\s+(?:the\s+)?period|for)\s*$", " ", out.strip(), flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", out).strip(" .:-") or label.strip()
+
+
+def _ledger_category(entry: _LedgerEntry) -> tuple[str, str]:
+    """``(category label, note)``: "Rent Received For Period … (Anne Tindale)" → "Rent", with
+    the tenant kept as the note; anything else keeps its own wording."""
+    label = re.sub(r"\s+", " ", entry.label).strip(" .:-")
+    note = ""
+    tenant = re.search(r"\(([^()]*)\)\s*$", label)
+    if _LEDGER_RENT_RE.match(label):
+        if tenant:
+            note = tenant.group(1).strip()
+        return "Rent", note
+    if entry.notes and entry.side == "expense" and not re.search(r"\d", entry.notes[0]):
+        note = entry.notes[0]  # the supplier ("Gas Services North East")
+    return _tidy_label(label) or "Other", note
+
+
+def _parse_ledger(
+    lines: list[_DocLine], text: str, known_properties: list[str], known_categories: list[str]
+) -> StatementFile | None:
+    """Parse a dated-ledger portfolio statement, or return None if this isn't one."""
+    blocks: list[_LedgerBlock] = []
+    cur: _LedgerBlock | None = None
+    side: str | None = None
+    margin: float | None = None  # x of the dates / address headings
+    note_x: float | None = None  # x of the description column, where notes start
+    last: _LedgerEntry | None = None
+    payout: float | None = None
+    stated: dict[str, float] = {}
+    done = False
+
+    for ln in lines:
+        words = ln.words
+        if not words:
+            continue
+        line_text = ln.text.strip()
+        first = words[0]
+
+        if done:
+            tm = _LEDGER_TOTAL_RE.match(line_text)
+            amt = _ledger_money(words[-1]) if len(words) > 1 else None
+            if tm and amt is not None:
+                stated["income" if tm.group(1).lower() == "income" else "expense"] = amt
+            continue
+
+        heading = line_text.lower().rstrip(":")
+        if heading in _SECTION_INCOME or heading in _SECTION_EXPENSE:
+            if cur is not None:
+                side = "income" if heading in _SECTION_INCOME else "expense"
+                last = None
+            continue
+
+        amount = _ledger_money(words[-1]) if len(words) > 1 else None
+        starts_dated = bool(_LEDGER_DATE_RE.match(first.text))
+
+        if starts_dated and amount is not None:
+            if margin is not None and abs(first.x0 - margin) > _LEDGER_X_TOL:
+                continue
+            label = " ".join(w.text for w in words[1:-1])
+            if _LEDGER_PAYOUT_RE.search(label):
+                payout, done = amount, True
+                continue
+            if cur is None or side is None:
+                continue
+            entry = _LedgerEntry(
+                when=None, side=side, label=label, amount=amount, date_tok=first.text
+            )
+            cur.entries.append(entry)
+            last = entry
+            if note_x is None and len(words) > 2:
+                note_x = words[1].x0
+            continue
+
+        if len(words) == 1 and amount is None and _ledger_money(first) is not None:
+            # A bare figure on its own line: the section subtotal.
+            if cur is not None and side is not None:
+                cur.subtotals[side] = _ledger_money(first)  # type: ignore[assignment]
+            last = None
+            continue
+
+        if amount is None and not starts_dated:
+            name, known = _ledger_property(line_text, known_properties)
+            if name and (margin is None or abs(first.x0 - margin) <= _LEDGER_X_TOL):
+                cur = _LedgerBlock(name=name, raw=line_text)
+                blocks.append(cur)
+                side, last = None, None
+                margin = first.x0
+                continue
+            if last is not None and note_x is not None and abs(first.x0 - note_x) <= _LEDGER_X_TOL:
+                last.notes.append(line_text)
+                continue
+        # Anything else — a repeated page header or footer — is not part of the ledger.
+
+    usable = [b for b in blocks if b.entries]
+    if len({b.name.strip().lower() for b in usable}) < _MIN_SECTION_PROPERTIES:
+        return None
+    return _build_ledger(usable, text, payout, stated, known_categories)
+
+
+def _build_ledger(
+    blocks: list[_LedgerBlock],
+    text: str,
+    payout: float | None,
+    stated: dict[str, float],
+    known_categories: list[str],
+) -> StatementFile:
+    dayfirst = _dayfirst(text)
+    sm = _LEDGER_STATEMENT_DATE_RE.search(text)
+    stmt_date = _parse_dmy(sm.group(1), dayfirst) if sm else None
+    stmt_month = date(stmt_date.year, stmt_date.month, 1) if stmt_date else None
+    warnings: list[str] = []
+    checks: list[str] = []
+
+    # Merge blocks naming the same property (a block continued under a repeated heading).
+    order: list[str] = []
+    by_prop: dict[str, list[_LedgerBlock]] = {}
+    for b in blocks:
+        key = b.name.strip().lower()
+        if key not in by_prop:
+            by_prop[key] = []
+            order.append(key)
+        by_prop[key].append(b)
+
+    totals = {"income": 0.0, "expense": 0.0}
+    extractions: list[RawExtraction] = []
+    for key in order:
+        group = by_prop[key]
+        head = group[0]
+        per_month: dict[date | None, RawExtraction] = {}
+        prop_warnings: list[str] = []
+
+        for b in group:
+            for side_name in ("income", "expense"):
+                side_entries = [e for e in b.entries if e.side == side_name]
+                printed = b.subtotals.get(side_name)
+                total = round(sum(e.amount for e in side_entries), 2)
+                totals[side_name] = round(totals[side_name] + total, 2)
+                if printed is not None and abs(printed - total) > 0.01:
+                    prop_warnings.append(
+                        f"⚠ The {side_name} entries read add up to {_money(total)} but the "
+                        f"statement's subtotal says {_money(printed)}."
+                    )
+
+            for e in b.entries:
+                e.when = _parse_dmy(e.date_tok, dayfirst)
+                month, period_note, fix = _ledger_month(e, dayfirst)
+                entry_warnings = [fix] if fix else []
+                if month and stmt_month and month > stmt_month:
+                    entry_warnings.append(
+                        f"“{e.label}” falls in {month:%b %Y}, after the statement date; "
+                        f"posted to {stmt_month:%b %Y} instead."
+                    )
+                    month = stmt_month
+                category_label, who = _ledger_category(e)
+                category = _snap_category(category_label, known_categories)
+                # Expenditure is printed negative; NOI subtracts operating expenses, so they
+                # are stored positive. A positive line under Expenditure is a credit and
+                # correctly comes out negative.
+                amount = e.amount if e.side == "income" else round(-e.amount, 2)
+                note = "; ".join(
+                    x for x in (who, period_note, f"dated {e.when:%d/%m/%Y}" if e.when else "") if x
+                )
+                ex = per_month.get(month)
+                if ex is None:
+                    ex = RawExtraction(
+                        property_name=head.name,
+                        raw_property_name=head.raw,
+                        month=month,
+                        backend="ledger",
+                    )
+                    per_month[month] = ex
+                # A warning about one entry belongs on the card that entry lands on.
+                ex.warnings.extend(entry_warnings)
+                ex.rows.append(
+                    {
+                        "unit": None,
+                        "category": category,
+                        # Stable across months (no period, no tenant), so a saved format's
+                        # alias for it still matches next month's statement.
+                        "raw_category": _ledger_stable_label(e.label),
+                        "amount": amount,
+                        "classification": (
+                            "rent" if e.side == "income" and category_label == "Rent"
+                            else _classify(category) or ("rent" if e.side == "income" else "operating")
+                        ),
+                        "kind": "rent" if e.side == "income" else "line",
+                        "note": note or None,
+                    }
+                )
+
+        months = sorted(per_month, key=lambda m: (m is None, m or date.min))
+        for m in months:
+            ex = per_month[m]
+            # One line item per category per month: same-category lines combine.
+            merged: dict[str, dict] = {}
+            for r in ex.rows:
+                k = r["category"].strip().lower()
+                if k in merged:
+                    merged[k]["amount"] = round(merged[k]["amount"] + r["amount"], 2)
+                    merged[k]["note"] = "; ".join(x for x in (merged[k]["note"], r["note"]) if x) or None
+                else:
+                    merged[k] = dict(r)
+            ex.rows = list(merged.values())
+            ex.warnings = [*prop_warnings, *ex.warnings]
+            if len(months) > 1:
+                named = ", ".join(x.strftime("%b %Y") for x in months if x)
+                ex.warnings.insert(
+                    0,
+                    f"This property's entries span {named}, so it is split into one statement "
+                    "per month.",
+                )
+            if m is None:
+                ex.warnings.append("Could not read a date for these entries — set the month.")
+            extractions.append(ex)
+
+    # ---- reconcile against the statement's own totals ---------------------------------
+    for side_name, word in (("income", "income"), ("expense", "expenditure")):
+        s = stated.get(side_name)
+        if s is None:
+            continue
+        if abs(s - totals[side_name]) < 0.01:
+            checks.append(f"{word} {_money(abs(s))} ✓")
+        else:
+            warnings.append(
+                f"⚠ The statement's total {word} is {_money(s)} but the entries read add up to "
+                f"{_money(totals[side_name])}. Check the rows below before uploading."
+            )
+    if payout is not None:
+        net = round(totals["income"] + totals["expense"], 2)
+        if abs(net - payout) < 0.01:
+            checks.append(f"paid to you {_money(payout)} ✓")
+        else:
+            warnings.append(
+                f"⚠ Income less expenditure is {_money(net)} but the statement paid out "
+                f"{_money(payout)}."
+            )
+    props = len(order)
+    head_line = f"{props} properties in {len(extractions)} statements"
+    if checks:
+        head_line += " — matches the statement: " + ", ".join(checks) + "."
+    warnings.insert(0, head_line)
+    if any(r["amount"] for ex in extractions for r in ex.rows if r["kind"] == "line"):
+        warnings.append(
+            "Expenditure is printed as negative amounts; it was imported as positive "
+            "expenses, which is how the P&L subtracts them."
+        )
+    return StatementFile(format="ledger", extractions=extractions, warnings=warnings)
+
+
 # ----------------------------------------------------------------- layout fingerprint
 # Two statements from one agent differ in every figure, every date and every property, and
 # are otherwise the same document. A fingerprint has to survive all of that and still
@@ -1860,6 +2264,10 @@ def extract_statements(
     roll = _parse_rent_roll(text, known_properties, known_categories)
     if roll is not None:
         return _fingerprinted(roll, lines)
+
+    ledger = _parse_ledger(lines, text, known_properties, known_categories)
+    if ledger is not None:
+        return _fingerprinted(ledger, lines)
 
     ex = _extract_single(
         text,

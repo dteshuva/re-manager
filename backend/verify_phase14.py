@@ -270,15 +270,17 @@ try:
     check("the reviewed rows import", r.status_code in (200, 201) and r.json()["committed"],
           r.text[:200])
     r = client.get("/records", headers=H, params={"property_id": pid, "month": str(MONTH)})
-    stored_rows = r.json()[0]["line_items"] if r.status_code == 200 and r.json() else []
+    # Rent is filed to the house's unit and the fee stays at the property (importer, phase 20),
+    # so the month is two records: read them all.
+    stored_rows = [li for rec in (r.json() if r.status_code == 200 else []) for li in rec["line_items"]]
     got = {li["category_id"]: li["amount"] for li in stored_rows}
-    check("the rent landed on the property, in September",
+    check("the rent landed on the property (its unit), in September",
           cents(got.get(rows[0]["category_id"], 0)) == cents(697.00), str(got))
     check("so did its share of the management fee",
           any(cents(v) == cents(97.58) for v in got.values()), str(got))
     r = client.post("/import/rows", headers=H, json=payload)
     r = client.get("/records", headers=H, params={"property_id": pid, "month": str(MONTH)})
-    again = {li["category_id"]: li["amount"] for li in r.json()[0]["line_items"]}
+    again = {li["category_id"]: li["amount"] for rec in r.json() for li in rec["line_items"]}
     check("re-importing the same statement overwrites rather than doubles", again == got,
           f"{got} -> {again}")
 

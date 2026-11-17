@@ -54,18 +54,41 @@ def check(label: str, ok: bool, detail: str = "") -> None:
 created: list[str] = []
 
 
+def add_unit(pid: str, number: str) -> None:
+    u = client.post(
+        f"/properties/{pid}/units",
+        headers=H,
+        json={"unit_number": number, "beds": 2, "baths": 1, "sqft": 700},
+    )
+    assert u.status_code == 201, u.text[:200]
+
+
+def resummarise(pid: str, month: str) -> None:
+    """Recompute a month's rollup after backdating a unit, as scripts/rent_to_unit_tier.py
+    does — creating a unit does not revisit months already summarised."""
+    from app.db import SessionLocal
+    from app.summaries import refresh_month
+
+    with SessionLocal() as db:
+        refresh_month(db, pid, date.fromisoformat(month))
+        db.commit()
+
+
 def new_property(name: str, kind: str, units: list[str]) -> str:
     r = client.post("/properties", headers=H, json={"name": name, "type": kind, "address": None})
     assert r.status_code == 201, r.text[:200]
     pid = r.json()["id"]
     created.append(pid)
+    # ``units`` is the set the property ends up with. A single-let is created with unit "1"
+    # already; an empty list removes it, to stage a house as it was before that rule — the
+    # only way property-tier rent on a house can still arise.
+    have = {u["unit_number"]: u["id"] for u in client.get(f"/properties/{pid}/units", headers=H).json()}
+    for number, uid in have.items():
+        if number not in units:
+            assert client.delete(f"/units/{uid}", headers=H).status_code == 204
     for number in units:
-        u = client.post(
-            f"/properties/{pid}/units",
-            headers=H,
-            json={"unit_number": number, "beds": 2, "baths": 1, "sqft": 700},
-        )
-        assert u.status_code == 201, u.text[:200]
+        if number not in have:
+            add_unit(pid, number)
     return pid
 
 
@@ -124,13 +147,14 @@ M1, M2, M3 = "2027-01-01", "2027-02-01", "2027-03-01"
 # ============================================================================================
 print("\n1. A one-unit property whose rent moves from the unit tier to the property tier")
 # ============================================================================================
-house = new_property("ZZ Phase17 House", "single", ["1"])
-post_rows(
-    [
-        rent_row(house, M1, 725.00, "1"),     # booked at the unit, as a lease-driven entry is
-        rent_row(house, M2, 725.00, None),    # booked at the property, as a statement import is
-    ]
-)
+# Since phase 20 the importer files unit-less rent on a one-unit property to that unit, so
+# property-tier rent on a house now arises only the way the real history did: imported while
+# the house had no unit yet. The read-side rule must still cope with those rows.
+house = new_property("ZZ Phase17 House", "single", [])
+post_rows([rent_row(house, M2, 725.00, None)])  # property tier: imported before the unit existed
+add_unit(house, "1")
+resummarise(house, M2)
+post_rows([rent_row(house, M1, 725.00, "1")])   # booked at the unit, as a lease-driven entry is
 
 s1, s2 = summary(house, M1), summary(house, M2)
 check("the unit-tier month is fully occupied", s1["occupancy"] == 1.0, str(s1["occupancy"]))
@@ -190,8 +214,10 @@ check(
 )
 
 # A one-unit property with BOTH tiers populated must not count its single unit twice.
-both = new_property("ZZ Phase17 Both", "single", ["1"])
-post_rows([rent_row(both, M1, 600.00, "1"), rent_row(both, M1, 50.00, None)])
+both = new_property("ZZ Phase17 Both", "single", [])
+post_rows([rent_row(both, M1, 50.00, None)])  # property tier, from before the unit existed
+add_unit(both, "1")
+post_rows([rent_row(both, M1, 600.00, "1")])
 sb = summary(both, M1)
 check(
     "a one-unit property with rent at both tiers is 100%, not 200%",

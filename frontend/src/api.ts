@@ -630,6 +630,8 @@ export interface Unit {
   // Migration 0015 — the unit's market/asking rent (rent waterfall's GPR reference
   // figure). Admin-editable via updateUnit. Reference data only, never feeds NOI.
   market_rent: number | null;
+  // A non-lettable space (read-only). A single-let's tenancy lives on its one NON-shell unit.
+  is_shell?: boolean;
 }
 
 export interface Category {
@@ -909,10 +911,10 @@ export interface StatementRow {
   raw_category: string | null;
 }
 
-export type StatementShape = "single" | "rent_roll" | "sectioned";
+export type StatementShape = "single" | "rent_roll" | "sectioned" | "ledger";
 
 export interface StatementPreview {
-  backend: string; // "ollama" | "heuristic" | "rent_roll" | "sectioned"
+  backend: string; // "ollama" | "heuristic" | "rent_roll" | "sectioned" | "ledger"
   format: StatementShape; // the shape of the FILE this came from
   detected_property: string | null;
   // The property as the statement printed it, before it was matched to a stored one.

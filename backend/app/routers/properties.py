@@ -48,6 +48,14 @@ def create_property(
 ):
     prop = Property(account_id=scope.account_id, **payload.model_dump())
     db.add(prop)
+    # A single-let house is born with its one unit ("1", as every existing house has). It may
+    # hold only one (see create_unit), so there is nothing to choose — and without it the
+    # first statements imported for a new house would file their rent at the property tier,
+    # invisible to the rent roll and arrears, and nothing would revisit them once the unit
+    # was added. See importer._resolve_row.
+    if prop.type == "single":
+        db.flush()
+        db.add(Unit(property_id=prop.id, unit_number="1"))
     db.commit()
     db.refresh(prop)
     return prop
